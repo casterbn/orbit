@@ -5,14 +5,17 @@
 #include "TimeGraph.h"
 
 #include <algorithm>
+#include <OrbitBase/Logging.h>
 
 #include "App.h"
 #include "Batcher.h"
 #include "Capture.h"
+#include "EventTracer.h"
 #include "EventTrack.h"
 #include "Geometry.h"
 #include "GlCanvas.h"
 #include "Log.h"
+#include "OrbitBase/Logging.h"
 #include "OrbitType.h"
 #include "OrbitUnreal.h"
 #include "Params.h"
@@ -27,7 +30,6 @@
 #include "TimerManager.h"
 #include "Utils.h"
 #include "absl/strings/str_format.h"
-#include "EventTracer.h"
 
 TimeGraph* GCurrentTimeGraph = nullptr;
 
@@ -240,9 +242,14 @@ void TimeGraph::ProcessTimer(const Timer& a_Timer) {
   if (!a_Timer.IsType(Timer::THREAD_ACTIVITY) &&
       !a_Timer.IsType(Timer::CORE_ACTIVITY)) {
     std::shared_ptr<ThreadTrack> track = GetThreadTrack(a_Timer.m_TID);
+    if (a_Timer.m_Type == Timer::GPU_ACTIVITY) {
+      track->SetName(string_manager_->Get(a_Timer.m_UserData[1]).value_or(""));
+      track->SetLabelDisplayMode(Track::NAME_ONLY);
+    }
+
     track->OnTimer(a_Timer);
     ++m_ThreadCountMap[a_Timer.m_TID];
-    if( a_Timer.m_Type == Timer::INTROSPECTION ) {
+    if (a_Timer.m_Type == Timer::INTROSPECTION) {
       const Color kGreenIntrospection(87, 166, 74, 255);
       track->SetColor(kGreenIntrospection);
     }
@@ -417,9 +424,8 @@ void TimeGraph::SelectLeft(const TextBox* a_TextBox) {
   double currentTimeWindowUs = m_MaxTimeUs - m_MinTimeUs;
   m_RefTimeUs = MicroSecondsFromTicks(m_SessionMinCounter, timer.m_Start);
 
-  double ratio = m_MarginRatio;
-  double minTimeUs = m_RefTimeUs - ratio * currentTimeWindowUs;
-  double maxTimeUs = m_RefTimeUs + (1 - ratio) * currentTimeWindowUs;
+  double minTimeUs = m_RefTimeUs;
+  double maxTimeUs = m_RefTimeUs + currentTimeWindowUs;
 
   SetMinMax(minTimeUs, maxTimeUs);
 }
@@ -459,6 +465,8 @@ inline std::string GetExtraInfo(const Timer& a_Timer) {
 
 //-----------------------------------------------------------------------------
 void TimeGraph::UpdatePrimitives(bool a_Picking) {
+  CHECK(string_manager_);
+
   m_Batcher.Reset();
   m_VisibleTextBoxes.clear();
   m_TextRendererStatic.Clear();
@@ -478,7 +486,7 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
   UpdateThreadIds();
 
   double span = m_MaxTimeUs - m_MinTimeUs;
-  TickType rawStart = GetTickFromUs(m_MinTimeUs + m_MarginRatio * span);
+  TickType rawStart = GetTickFromUs(m_MinTimeUs);
   TickType rawStop = GetTickFromUs(m_MaxTimeUs);
 
   unsigned int TextBoxID = 0;
@@ -547,6 +555,33 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
           Color grey(g, g, g, 255);
           static Color selectionColor(0, 128, 255, 255);
           Color col = GetThreadColor(timer.m_TID);
+
+          // We disambiguate the different types of GPU activity based on the
+          // string that is displayed on their timeslice.
+          if (timer.m_Type == Timer::GPU_ACTIVITY) {
+            // We color code the timeslices for GPU activity using the color
+            // of the CPU thread track that submitted the job.
+            col = GetThreadColor(timer.m_SubmitTID);
+
+            constexpr const char* kSwQueueString = "sw queue";
+            constexpr const char* kHwQueueString = "hw queue";
+            constexpr const char* kHwExecutionString = "hw execution";
+            float coeff = 1.0f;
+            std::string gpu_stage =
+                string_manager_->Get(timer.m_UserData[0]).value_or("");
+            if (gpu_stage == kSwQueueString) {
+              coeff = 0.5f;
+            } else if (gpu_stage == kHwQueueString) {
+              coeff = 0.75f;
+            } else if (gpu_stage == kHwExecutionString) {
+              coeff = 1.0f;
+            }
+
+            col[0] = coeff * col[0];
+            col[1] = coeff * col[1];
+            col[2] = coeff * col[2];
+          }
+
           col = isSelected
                     ? selectionColor
                     : isSameThreadIdAsSelected ? col : isInactive ? grey : col;
@@ -591,11 +626,13 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
                     "%s %s %s", name, extraInfo.c_str(), time.c_str());
 
                 textBox.SetText(text);
-              } else if( timer.m_Type == Timer::INTROSPECTION && string_manager_) {
-                textBox.SetText(string_manager_->Get(
-                    timer.m_UserData[0]).value_or(""));
-              }
-               else if (!SystraceManager::Get().IsEmpty()) {
+              } else if (timer.m_Type == Timer::INTROSPECTION) {
+                textBox.SetText(
+                    string_manager_->Get(timer.m_UserData[0]).value_or(""));
+              } else if (timer.m_Type == Timer::GPU_ACTIVITY) {
+                textBox.SetText(
+                    string_manager_->Get(timer.m_UserData[0]).value_or(""));
+              } else if (!SystraceManager::Get().IsEmpty()) {
                 textBox.SetText(SystraceManager::Get().GetFunctionName(
                     timer.m_FunctionAddress));
               } else if (!Capture::IsCapturing()) {
@@ -821,7 +858,10 @@ void TimeGraph::UpdateThreadIds() {
     std::vector<std::pair<ThreadID, uint32_t>> sortedThreads =
         OrbitUtils::ReverseValueSort(m_ThreadCountMap);
     for (auto& pair : sortedThreads) {
-      sortedThreadIds.push_back(pair.first);
+      // Scheduling information is held in thread "0", show it last.
+      // TODO: Make a proper "SchedTrack" instead of hack.
+      if(pair.first != 0)
+        sortedThreadIds.push_back(pair.first);
     }
 
     // Then show threads sorted by number of events
@@ -832,6 +872,9 @@ void TimeGraph::UpdateThreadIds() {
         sortedThreadIds.push_back(pair.first);
       }
     }
+
+    // Scheduling information is held in thread "0", show it last.
+    sortedThreadIds.push_back(0);
 
     // Filter thread ids if needed
     if (!m_ThreadFilter.empty()) {
@@ -1033,7 +1076,7 @@ bool TimeGraph::IsVisible(const Timer& a_Timer) {
   double end = MicroSecondsFromTicks(m_SessionMinCounter, a_Timer.m_End);
 
   double span = m_MaxTimeUs - m_MinTimeUs;
-  double startUs = m_MinTimeUs + m_MarginRatio * span;
+  double startUs = m_MinTimeUs;
 
   if (startUs > end || m_MaxTimeUs < start) {
     return false;

@@ -4,8 +4,10 @@
 
 #include "LinuxUtils.h"
 
+#include <absl/strings/str_split.h>
 #include <asm/unistd.h>
 #include <cxxabi.h>
+#include <dirent.h>
 #include <linux/perf_event.h>
 #include <linux/types.h>
 #include <linux/version.h>
@@ -20,6 +22,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <charconv>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -31,7 +34,9 @@
 #include "Callstack.h"
 #include "Capture.h"
 #include "ConnectionManager.h"
+#include "ElfFile.h"
 #include "EventBuffer.h"
+#include "OrbitBase/Logging.h"
 #include "OrbitModule.h"
 #include "OrbitProcess.h"
 #include "Path.h"
@@ -40,7 +45,9 @@
 #include "ScopeTimer.h"
 #include "TcpClient.h"
 #include "Utils.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/strip.h"
 
 namespace LinuxUtils {
 
@@ -84,41 +91,64 @@ std::string ExecuteCommand(const char* a_Cmd) {
 }
 
 //-----------------------------------------------------------------------------
-void ListModules(pid_t a_PID,
-                 std::map<uint64_t, std::shared_ptr<Module>>& o_ModuleMap) {
-  std::map<std::string, std::shared_ptr<Module>> modules;
-  std::vector<std::string> result = ListModules(a_PID);
+void ListModules(pid_t pid,
+                 std::map<uint64_t, std::shared_ptr<Module>>* module_map) {
+  struct AddressRange {
+    uint64_t start_address;
+    uint64_t end_address;
+  };
+
+  std::map<std::string, AddressRange> address_map;
+  std::vector<std::string> result = ListModules(pid);
+
   for (const std::string& line : result) {
-    std::vector<std::string> tokens = Tokenize(line);
-    if (tokens.size() == 6) {
-      const std::string& moduleName = tokens[5];
+    std::vector<std::string> tokens =
+        absl::StrSplit(line, " ", absl::SkipEmpty());
 
-      auto addresses = Tokenize(tokens[0], "-");
-      if (addresses.size() == 2) {
-        auto iter = modules.find(moduleName);
-        std::shared_ptr<Module> module =
-            (iter == modules.end()) ? std::make_shared<Module>() : iter->second;
+    // tokens[4] is the inode column. If inode equals 0, then the memory is not
+    // mapped to a file (might be heap, stack or something else)
+    if (tokens.size() != 6 || tokens[4] == "0") continue;
 
-        uint64_t start = std::stoull(addresses[0], nullptr, 16);
-        uint64_t end = std::stoull(addresses[1], nullptr, 16);
+    const std::string& module_name = tokens[5];
 
-        if (module->m_AddressStart == 0 || start < module->m_AddressStart)
-          module->m_AddressStart = start;
-        if (end > module->m_AddressEnd) module->m_AddressEnd = end;
+    std::vector<std::string> addresses = absl::StrSplit(tokens[0], "-");
+    if (addresses.size() != 2) continue;
 
-        module->m_FullName = moduleName;
-        module->m_Name = Path::GetFileName(module->m_FullName);
-        module->m_Directory = Path::GetDirectory(module->m_FullName);
-        module->m_PdbSize = Path::FileSize(moduleName);
-        modules[moduleName] = module;
-      }
+    uint64_t start = std::stoull(addresses[0], nullptr, 16);
+    uint64_t end = std::stoull(addresses[1], nullptr, 16);
+
+    auto iter = address_map.find(module_name);
+    if (iter == address_map.end()) {
+      address_map[module_name] = {start, end};
+    } else {
+      AddressRange& address_range = iter->second;
+      address_range.start_address =
+          std::min(address_range.start_address, start);
+      address_range.end_address = std::max(address_range.end_address, end);
     }
   }
 
-  for (auto& iter : modules) {
-    auto module = iter.second;
-    module->GetPrettyName();
-    o_ModuleMap[module->m_AddressStart] = module;
+  for (const auto& [module_name, address_range] : address_map) {
+    module_map->insert_or_assign(
+        address_range.start_address,
+        std::make_shared<Module>(module_name, address_range.start_address,
+                                 address_range.end_address));
+
+    std::shared_ptr<Module> module = (*module_map)[address_range.start_address];
+
+    // This filters out entries which are inaccessible
+    if (module->m_PdbSize == 0) continue;
+
+    std::unique_ptr<ElfFile> elf_file = ElfFile::Create(module->m_FullName);
+    if (!elf_file) {
+      ERROR("Unable to create an elf file for module %s",
+            module->m_FullName.c_str());
+      continue;
+    }
+
+    if (elf_file->GetBuildId().empty()) continue;
+
+    module->m_DebugSignature = elf_file->GetBuildId();
   }
 }
 
@@ -238,6 +268,42 @@ uint32_t GetKernelVersion() {
 //-----------------------------------------------------------------------------
 bool IsKernelOlderThan(const char* a_Version) {
   return GetKernelVersion() < GetVersion(a_Version);
+}
+
+//-----------------------------------------------------------------------------
+std::string GetProcessDir(pid_t process_id) {
+  return "/proc/" + std::to_string(process_id) + "/";
+}
+
+//-----------------------------------------------------------------------------
+std::map<uint32_t, std::string> GetThreadNames(pid_t process_id) {
+  // We use std::map rather the flat_hash_map to allow "cereal" serialization
+  // and to get sorted pairs.
+  std::map<uint32_t, std::string> thread_ids_to_name;
+  std::string threads_dir = GetProcessDir(process_id) + "task/";
+  struct dirent* dir_entry = nullptr;
+  DIR* dir = nullptr;
+
+  dir = opendir(threads_dir.c_str());
+  if (dir == nullptr) {
+    ERROR("Couldn't open %s\n", threads_dir.c_str());
+    return thread_ids_to_name;
+  }
+
+  while ((dir_entry = readdir(dir))) {
+    if (dir_entry->d_type == DT_DIR && IsAllDigits(dir_entry->d_name)) {
+      std::string thread_file = threads_dir + dir_entry->d_name + "/comm";
+      std::string thread_name = FileToString(thread_file);
+      absl::StripTrailingAsciiWhitespace(&thread_name);  // Remove new-line.
+      pid_t tid = 0;
+      if (!thread_name.empty() && absl::SimpleAtoi(dir_entry->d_name, &tid)) {
+        thread_ids_to_name[tid] = thread_name;
+      }
+    }
+  }
+
+  closedir(dir);
+  return thread_ids_to_name;
 }
 
 }  // namespace LinuxUtils

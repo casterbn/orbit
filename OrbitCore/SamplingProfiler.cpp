@@ -43,10 +43,11 @@ SamplingProfiler::~SamplingProfiler() {}
 
 //-----------------------------------------------------------------------------
 void SamplingProfiler::StartCapture() {
-  Capture::GNumSamples = 0;
-  Capture::GNumSamplingTicks = 0;
   Capture::GIsSampling = true;
-  m_Process->EnumerateThreads();
+
+  if (!m_Process->GetIsRemote()) {
+    m_Process->EnumerateThreads();
+  }
 
   m_SamplingTimer.Start();
   m_ThreadUsageTimer.Start();
@@ -69,8 +70,6 @@ void SamplingProfiler::SampleThreadsAsync() {
       m_ThreadUsageTimer.Start();
     }
 
-    ++Capture::GNumSamplingTicks;
-
     for (const auto& thread : m_Process->GetThreads()) {
       DWORD result = SuspendThread(thread->m_Handle);
       if (result != (DWORD)-1) {
@@ -80,7 +79,6 @@ void SamplingProfiler::SampleThreadsAsync() {
         SetThreadPriority(thread->m_Handle, prev_priority);
 
         ResumeThread(thread->m_Handle);
-        ++Capture::GNumSamples;
       }
     }
 
@@ -562,7 +560,11 @@ unsigned long long SampledFunction::Hash() {
 }
 
 //-----------------------------------------------------------------------------
-bool SampledFunction::GetSelected() const {
+bool SampledFunction::GetSelected() {
+  if (m_Function == nullptr) {
+    m_Function =
+        Capture::GTargetProcess->GetFunctionFromAddress(m_Address, false);
+  }
   return m_Function ? m_Function->IsSelected() : false;
 }
 

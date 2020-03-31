@@ -201,26 +201,40 @@ cmake ... # CMake from conan is now available
 
 There is also a `deactivate.{sh,bat,ps1}` which make your shell leave the virtual environment.
 
+### `ERROR: .../orbitprofiler/conanfile.py: 'options.ggp' doesn't exist` ?!?
+
+This message or a similar one indicates that your build profiles are
+outdated and need to be updated. You can either just call the bootstrap
+script again or you can manually update your conan config:
+```bash
+conan config install contrib/conan/configs/[windows,linux]
+```
+
+### How can I use separate debugging symbols for Linux binaries?
+
+Orbit supports loading symbols from your workstation. Simply add directories that contain debugging symbols to the `SymbolPaths.txt` file. This file can be found at
+* Windows: `C:\Users\<user>\AppData\Roaming\OrbitProfiler\config\SymbolPaths.txt`
+* Linux: `~/orbitprofiler/config/SymbolPaths.txt`
+
+The symbols file must named in one of three ways. The same fname as the binary (`game.elf`), the same name plus the `.debug` extension (`game.elf.debug`) or the same name but the `.debug` extension instead of the original one (`game.debug`). To make sure the binary and symbols file have been produced in the same build, Orbit checks that they have a matching build id.
 
 ## Cross-Compiling for GGP
 
-_Note:_ This was only tested on Linux. Cross compilation on Windows
-is currently not supported. There are some issues with cross-compiling
-openssl.
+Cross compilation is supported on Windows and Linux host systems.
 
 _Note:_ Cross compiling the UI is not supported.
 
 _Note:_ Since the GGP SDK is not publicly available, this only works inside
 of Google, at least for now.
 
-Call the script `bootstrap-orbit-ggp.sh` which creates a package out of the GGP
-SDK (you do not need to have the SDK installed), and compiles Orbit against
-the toolchain from the GGP SDK package.
+Call the script `bootstrap-orbit-ggp.{sh,bat}` which creates a package out of the GGP
+SDK (you do not need to have the SDK installed for this to work, but you will need it
+for deployment), and compiles Orbit against the toolchain from the GGP SDK package.
 
 Finally, `build_ggp_release/package/bin/OrbitService` can be copied over
 to the instance:
 ```bash
-ggp ssh put build_ggp_release/package/bin/OrbitService
+ggp ssh put build_ggp_release/package/bin/OrbitService /mnt/developer/
 ```
 
 before the service can be started with:

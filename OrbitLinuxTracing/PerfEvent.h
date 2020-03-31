@@ -50,6 +50,10 @@ class ContextSwitchPerfEvent : public PerfEvent {
   }
   bool IsSwitchIn() const { return !IsSwitchOut(); }
 
+  uint64_t GetStreamId() const {
+    return ring_buffer_record.sample_id.stream_id;
+  }
+
   uint32_t GetCpu() const { return ring_buffer_record.sample_id.cpu; }
 };
 
@@ -63,31 +67,42 @@ class SystemWideContextSwitchPerfEvent : public PerfEvent {
 
   void Accept(PerfEventVisitor* visitor) override;
 
-  pid_t GetPrevPid() const {
-    return IsSwitchOut() ? ring_buffer_record.sample_id.pid
-                         : ring_buffer_record.next_prev_pid;
-  }
+  pid_t GetPid() const { return ring_buffer_record.sample_id.pid; }
 
-  pid_t GetPrevTid() const {
-    return IsSwitchOut() ? ring_buffer_record.sample_id.tid
-                         : ring_buffer_record.next_prev_tid;
-  }
-
-  pid_t GetNextPid() const {
-    return IsSwitchOut() ? ring_buffer_record.next_prev_pid
-                         : ring_buffer_record.sample_id.pid;
-  }
-
-  pid_t GetNextTid() const {
-    return IsSwitchOut() ? ring_buffer_record.next_prev_tid
-                         : ring_buffer_record.sample_id.tid;
-  }
+  pid_t GetTid() const { return ring_buffer_record.sample_id.tid; }
 
   bool IsSwitchOut() const {
     return ring_buffer_record.header.misc & PERF_RECORD_MISC_SWITCH_OUT;
   }
 
   bool IsSwitchIn() const { return !IsSwitchOut(); }
+
+  // Careful: even if PERF_RECORD_SWITCH_CPU_WIDE events carry information on
+  // both the thread being de-scheduled and the one being scheduled (if the cpu
+  // is switching from a thread to another and not from/to an idle state), two
+  // separate PERF_RECORD_SWITCH_CPU_WIDE are still generated, one for the
+  // switch-out and one for the switch-in. Therefore, prefer GetPid/Tid and
+  // IsSwitchOut/In to GetPrev/NextPid/Tid.
+
+  pid_t GetPrevPid() const {
+    return IsSwitchOut() ? GetPid() : ring_buffer_record.next_prev_pid;
+  }
+
+  pid_t GetPrevTid() const {
+    return IsSwitchOut() ? GetTid() : ring_buffer_record.next_prev_tid;
+  }
+
+  pid_t GetNextPid() const {
+    return IsSwitchOut() ? ring_buffer_record.next_prev_pid : GetPid();
+  }
+
+  pid_t GetNextTid() const {
+    return IsSwitchOut() ? ring_buffer_record.next_prev_tid : GetTid();
+  }
+
+  uint64_t GetStreamId() const {
+    return ring_buffer_record.sample_id.stream_id;
+  }
 
   uint32_t GetCpu() const { return ring_buffer_record.sample_id.cpu; }
 };
@@ -104,6 +119,12 @@ class ForkPerfEvent : public PerfEvent {
   pid_t GetParentPid() const { return ring_buffer_record.ppid; }
   pid_t GetTid() const { return ring_buffer_record.tid; }
   pid_t GetParentTid() const { return ring_buffer_record.ptid; }
+
+  uint64_t GetStreamId() const {
+    return ring_buffer_record.sample_id.stream_id;
+  }
+
+  uint32_t GetCpu() const { return ring_buffer_record.sample_id.cpu; }
 };
 
 class ExitPerfEvent : public PerfEvent {
@@ -118,6 +139,12 @@ class ExitPerfEvent : public PerfEvent {
   pid_t GetParentPid() const { return ring_buffer_record.ppid; }
   pid_t GetTid() const { return ring_buffer_record.tid; }
   pid_t GetParentTid() const { return ring_buffer_record.ptid; }
+
+  uint64_t GetStreamId() const {
+    return ring_buffer_record.sample_id.stream_id;
+  }
+
+  uint32_t GetCpu() const { return ring_buffer_record.sample_id.cpu; }
 };
 
 class LostPerfEvent : public PerfEvent {
@@ -131,6 +158,12 @@ class LostPerfEvent : public PerfEvent {
   void Accept(PerfEventVisitor* visitor) override;
 
   uint64_t GetNumLost() const { return ring_buffer_record.lost; }
+
+  uint64_t GetStreamId() const {
+    return ring_buffer_record.sample_id.stream_id;
+  }
+
+  uint32_t GetCpu() const { return ring_buffer_record.sample_id.cpu; }
 };
 
 struct __attribute__((__packed__)) dynamically_sized_perf_event_stack_sample {
@@ -145,7 +178,7 @@ struct __attribute__((__packed__)) dynamically_sized_perf_event_stack_sample {
   };
 
   perf_event_header header;
-  perf_event_sample_id_tid_time_cpu sample_id;
+  perf_event_sample_id_tid_time_streamid_cpu sample_id;
   perf_event_sample_regs_user_all regs;
   dynamically_sized_perf_event_sample_stack_user stack;
 
@@ -168,6 +201,11 @@ class SamplePerfEvent : public PerfEvent {
 
   pid_t GetPid() const { return ring_buffer_record->sample_id.pid; }
   pid_t GetTid() const { return ring_buffer_record->sample_id.tid; }
+
+  uint64_t GetStreamId() const {
+    return ring_buffer_record->sample_id.stream_id;
+  }
+
   uint32_t GetCpu() const { return ring_buffer_record->sample_id.cpu; }
 
   std::array<uint64_t, PERF_REG_X86_64_MAX> GetRegisters() const {
@@ -252,6 +290,11 @@ class UretprobesPerfEvent : public PerfEvent, public AbstractUprobesPerfEvent {
 
   pid_t GetPid() const { return ring_buffer_record.sample_id.pid; }
   pid_t GetTid() const { return ring_buffer_record.sample_id.tid; }
+
+  uint64_t GetStreamId() const {
+    return ring_buffer_record.sample_id.stream_id;
+  }
+
   uint32_t GetCpu() const { return ring_buffer_record.sample_id.cpu; }
 };
 
@@ -271,6 +314,14 @@ class MapsPerfEvent : public PerfEvent {
  private:
   uint64_t timestamp_;
   std::string maps_;
+};
+
+class PerfEventSampleRaw {
+ public:
+  perf_event_sample_raw ring_buffer_record;
+  std::vector<uint8_t> data;
+  explicit PerfEventSampleRaw(uint32_t size)
+      : data(size) {}
 };
 
 }  // namespace LinuxTracing

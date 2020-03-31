@@ -23,10 +23,14 @@ ThreadTrack::ThreadTrack(TimeGraph* a_TimeGraph, uint32_t a_ThreadID) {
 
 //-----------------------------------------------------------------------------
 void ThreadTrack::Draw(GlCanvas* a_Canvas, bool a_Picking) {
+  // Scheduling information is held in thread "0", don't draw as threadtrack.
+  // TODO: Make a proper "SchedTrack" instead of hack.
+  if (m_ID == 0) return;
+
   TimeGraphLayout& layout = m_TimeGraph->GetLayout();
   float threadOffset = layout.GetThreadBlockStart(m_ID);
   float trackHeight = GetHeight();
-  float trackWidth = a_Canvas->GetWorldWidth() * m_TimeGraph->GetMarginRatio();
+  float trackWidth = a_Canvas->GetWorldWidth();
 
   SetPos(a_Canvas->GetWorldTopLeftX(), threadOffset);
   SetSize(trackWidth, trackHeight);
@@ -64,7 +68,8 @@ void ThreadTrack::OnTimer(const Timer& a_Timer) {
 float ThreadTrack::GetHeight() const {
   TimeGraphLayout& layout = m_TimeGraph->GetLayout();
   return layout.GetTextBoxHeight() * GetDepth() +
-         layout.GetSpaceBetweenTracksAndThread() + layout.GetEventTrackHeight();
+         layout.GetSpaceBetweenTracksAndThread() +
+         layout.GetEventTrackHeight() + layout.GetTrackBottomMargin();
 }
 
 //-----------------------------------------------------------------------------
@@ -91,6 +96,13 @@ Color ThreadTrack::GetColor(ThreadID a_TID) {
       Color(215, 171, 105, a),  // beige
       Color(248, 101, 22, a)    // orange
   };
+
+  // This is a GPU thread track.
+  constexpr ThreadID kMinGpuThreadId = 100000;
+  if (a_TID >= kMinGpuThreadId) {
+    const Color gray(100, 100, 100, 255);
+    return gray;
+  }
 
   return s_ThreadColors[a_TID % s_ThreadColors.size()];
 }

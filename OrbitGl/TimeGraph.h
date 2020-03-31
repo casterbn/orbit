@@ -97,7 +97,6 @@ class TimeGraph {
   uint32_t GetNumTimers() const;
   uint32_t GetNumCores() const;
   std::vector<std::shared_ptr<TimerChain> > GetAllTimerChains() const;
-  double GetMarginRatio() const { return m_MarginRatio; }
 
   void OnDrag(float a_Ratio);
   double GetMinTimeUs() const { return m_MinTimeUs; }
@@ -165,7 +164,6 @@ class TimeGraph {
   mutable Mutex m_Mutex;
   ThreadTrackMap tracks_;
   std::unordered_map<ThreadID, std::shared_ptr<ThreadTrack> > thread_tracks_;
-  double m_MarginRatio = 0.1;
   std::string m_ThreadFilter;
 
   std::shared_ptr<StringManager> string_manager_;

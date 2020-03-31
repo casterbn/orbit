@@ -17,7 +17,8 @@ class SamplingProfiler;
 class Function;
 struct CallStack;
 
-struct Capture {
+class Capture {
+ public:
   static void Init();
   static bool Inject(bool a_WaitForConnection = true);
   static bool Connect();
@@ -35,15 +36,15 @@ struct Capture {
   static void Update();
   static void DisplayStats();
   static void TestHooks();
-  static void OpenCapture(const std::string& a_CaptureName);
   static bool IsOtherInstanceRunning();
   static void LoadSession(const std::shared_ptr<Session>& a_Session);
   static void SaveSession(const std::string& a_FileName);
   static void NewSamplingProfiler();
   static bool IsTrackingEvents();
-  static bool
-  IsRemote();  // True when Orbit is receiving data from remote source
-  static bool IsLinuxData();  // True if receiving data from Linux remote source
+  // True when Orbit is receiving data from remote source
+  static bool IsRemote();
+  // True if receiving data from Linux remote source
+  static bool IsLinuxData();
   static void RegisterZoneName(DWORD64 a_ID, char* a_Name);
   static void AddCallstack(CallStack& a_CallStack);
   static std::shared_ptr<CallStack> GetCallstack(CallstackID a_ID);
@@ -67,17 +68,13 @@ struct Capture {
   static class TcpEntity* GetMainTcpEntity();
 
   static bool GInjected;
-  static bool GIsConnected;
   static std::string GInjectedProcess;
-  static double GOpenCaptureTime;
   static int GCapturePort;
   static std::string GCaptureHost;
   static std::string GPresetToLoad;  // TODO: allow multiple presets
   static std::string GProcessToInject;
   static bool GIsSampling;
   static bool GIsTesting;
-  static uint32_t GNumSamples;
-  static uint32_t GNumSamplingTicks;
   static uint32_t GFunctionIndex;
   static uint32_t GNumInstalledHooks;
   static bool GHasContextSwitches;
@@ -104,9 +101,9 @@ struct Capture {
   static std::chrono::system_clock::time_point GCaptureTimePoint;
   static Mutex GCallstackMutex;
   static LoadPdbAsyncFunc GLoadPdbAsync;
-  static bool GUnrealSupported;
 
  private:
+  static bool GUnrealSupported;
   static SamplingDoneCallback sampling_done_callback_;
   static void* sampling_done_callback_user_data_;
 };

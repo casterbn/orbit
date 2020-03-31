@@ -12,6 +12,7 @@ fi
 sudo apt-get update
 sudo apt-get install -y build-essential
 sudo apt-get install -y libglu1-mesa-dev mesa-common-dev libxmu-dev libxi-dev
+sudo apt-get install -y libopengl0
 sudo apt-get install -y qt5-default
 sudo apt-get install -y python3-pip
 
@@ -37,7 +38,7 @@ else
 fi
 
 echo "Installing conan configuration (profiles, settings, etc.)..."
-conan config install $DIR/contrib/conan/config || exit $?
+conan config install $DIR/contrib/conan/configs/linux || exit $?
 
 exec $DIR/build.sh "$@"
 

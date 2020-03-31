@@ -12,6 +12,7 @@
 #include "KeyAndString.h"
 #include "LinuxCallstackEvent.h"
 #include "LinuxSymbol.h"
+#include "OrbitBase/Logging.h"
 #include "OrbitBase/Tracing.h"
 #include "OrbitFunction.h"
 #include "OrbitModule.h"
@@ -19,6 +20,7 @@
 #include "ProcessUtils.h"
 #include "SamplingProfiler.h"
 #include "Serialization.h"
+#include "SymbolHelper.h"
 #include "TcpClient.h"
 #include "TcpServer.h"
 #include "TestRemoteMessages.h"
@@ -35,7 +37,9 @@
 #include <streambuf>
 
 ConnectionManager::ConnectionManager()
-    : exit_requested_(false), is_service_(false) {}
+    : exit_requested_(false),
+      is_service_(false),
+      tracing_session_(GTcpServer) {}
 
 ConnectionManager::~ConnectionManager() {
   StopThread();
@@ -70,6 +74,7 @@ void ConnectionManager::InitAsService() {
 
   is_service_ = true;
   string_manager_ = std::make_shared<StringManager>();
+  tracing_session_.SetStringManager(string_manager_);
   SetupIntrospection();
   SetupServerCallbacks();
   thread_ = std::make_unique<std::thread>(
@@ -93,7 +98,7 @@ void ConnectionManager::SetSelectedFunctionsOnRemote(const Message& a_Msg) {
 
   Capture::GSelectedFunctionsMap.clear();
   for (Function* function : prevSelectedFuncs) {
-    function->UnSelect();
+    if (function) function->UnSelect();
   }
 
   // Select the received functions:
@@ -124,10 +129,9 @@ void ConnectionManager::ServerCaptureThreadWorker() {
 
     std::vector<LinuxCallstackEvent> callstacks;
     if (tracing_session_.ReadAllCallstacks(&callstacks)) {
-        std::string message_data = SerializeObjectBinary(callstacks);
-        GTcpServer->Send(Msg_SamplingCallstacks, message_data.c_str(),
-                         message_data.size());
-
+      std::string message_data = SerializeObjectBinary(callstacks);
+      GTcpServer->Send(Msg_SamplingCallstacks, message_data.c_str(),
+                       message_data.size());
     }
 
     std::vector<CallstackEvent> hashed_callstacks;
@@ -139,8 +143,8 @@ void ConnectionManager::ServerCaptureThreadWorker() {
 
     std::vector<ContextSwitch> context_switches;
     if (tracing_session_.ReadAllContextSwitches(&context_switches)) {
-        Message Msg(Msg_RemoteContextSwitches);
-        GTcpServer->Send(Msg, context_switches);
+      Message Msg(Msg_RemoteContextSwitches);
+      GTcpServer->Send(Msg, context_switches);
     }
   }
 }
@@ -148,12 +152,11 @@ void ConnectionManager::ServerCaptureThreadWorker() {
 void ConnectionManager::SetupIntrospection() {
 #if __linux__ && ORBIT_TRACING_ENABLED
   // Setup introspection handler.
-  auto handler = std::make_unique<orbit::introspection::Handler>(
-      string_manager_, &tracing_session_);
+  auto handler =
+      std::make_unique<orbit::introspection::Handler>(&tracing_session_);
   LinuxTracing::SetOrbitTracingHandler(std::move(handler));
 #endif  // ORBIT_TRACING_ENABLED
 }
-
 
 void ConnectionManager::StartCaptureAsRemote(uint32_t pid) {
   PRINT_FUNC;
@@ -164,6 +167,7 @@ void ConnectionManager::StartCaptureAsRemote(uint32_t pid) {
   }
   Capture::SetTargetProcess(process);
   tracing_session_.Reset();
+  string_manager_->Clear();
   Capture::StartCapture(&tracing_session_);
   server_capture_thread_ = std::make_unique<std::thread>(
       &ConnectionManager::ServerCaptureThreadWorker, this);
@@ -209,33 +213,53 @@ void ConnectionManager::SetupServerCallbacks() {
         uint32_t pid =
             static_cast<uint32_t>(msg.m_Header.m_GenericHeader.m_Address);
 
-        PRINT("RemoteModuleDebugInfo pid=%d\n", pid);
         std::shared_ptr<Process> process = process_list_.GetProcess(pid);
         if (!process) {
-          PRINT("Process not found (pid=%d)\n", pid);
+          ERROR("Process not found (pid=%d)", pid);
           return;
         }
 
         Capture::SetTargetProcess(process);
 
-        std::vector<ModuleDebugInfo> remoteModuleDebugInfo;
-        std::vector<std::string> modules;
-
+        std::vector<ModuleDebugInfo> module_infos;
         std::istringstream buffer(std::string(msg.m_Data, msg.m_Size));
         cereal::BinaryInputArchive inputAr(buffer);
-        inputAr(modules);
+        inputAr(module_infos);
 
-        for (std::string& module : modules) {
-          ModuleDebugInfo moduleDebugInfo;
-          moduleDebugInfo.m_Name = module;
-          process->FillModuleDebugInfo(moduleDebugInfo);
-          remoteModuleDebugInfo.push_back(moduleDebugInfo);
+        std::vector<ModuleDebugInfo> module_infos_send_back;
+
+        for (auto& module_info : module_infos) {
+          std::shared_ptr<Module> module =
+              process->GetModuleFromName(module_info.m_Name);
+          if (!module) {
+            ERROR("Unable to find module %s", module_info.m_Name.c_str());
+            continue;
+          }
+          const SymbolHelper symbolHelper;
+          if (!module_info.m_Functions.empty()) {
+            LOG("Received %lu function symbols from local machine for "
+                "module %s",
+                module_info.m_Functions.size(), module_info.m_Name.c_str());
+            symbolHelper.LoadSymbolsFromDebugInfo(module, module_info);
+            continue;
+          }
+
+          if (symbolHelper.LoadSymbolsCollector(module)) {
+            symbolHelper.FillDebugInfoFromModule(module, module_info);
+            LOG("Loaded %lu function symbols for module %s",
+                module_info.m_Functions.size(), module_info.m_Name.c_str());
+          } else {
+            ERROR("Unable to load symbols of module %s",
+                  module->m_Name.c_str());
+          }
+
+          module_infos_send_back.emplace_back(module_info);
         }
 
         // Send data back
-        std::string messageData = SerializeObjectBinary(remoteModuleDebugInfo);
-        GTcpServer->Send(Msg_RemoteModuleDebugInfo, (void*)messageData.data(),
-                         messageData.size());
+        std::string message_data =
+            SerializeObjectBinary(module_infos_send_back);
+        GTcpServer->Send(Msg_RemoteModuleDebugInfo, message_data);
       });
 }
 
@@ -278,7 +302,7 @@ void ConnectionManager::SetupClientCallbacks() {
     cereal::BinaryInputArchive inputAr(buffer);
     inputAr(key_and_string);
     GCoreApp->AddKeyAndString(key_and_string.key, key_and_string.str);
-   });
+  });
 
   GTcpClient->AddCallback(Msg_RemoteCallStack, [=](const Message& a_Msg) {
     CallStack stack;
@@ -349,6 +373,7 @@ void ConnectionManager::SendRemoteProcess(TcpEntity* tcp_entity, uint32_t pid) {
   // and all the messages should to be as stateless as possible.
   Capture::SetTargetProcess(process);
   process->ListModules();
+  process->EnumerateThreads();
   if (process) {
     std::string process_data = SerializeObjectHumanReadable(*process);
     tcp_entity->Send(Msg_RemoteProcess, process_data.data(),

@@ -22,6 +22,8 @@ target_sources(OrbitLinuxTracing PUBLIC
         include/OrbitLinuxTracing/TracerListener.h)
 
 target_sources(OrbitLinuxTracing PRIVATE
+        GpuTracepointEventProcessor.h
+        GpuTracepointEventProcessor.cpp
         LibunwindstackUnwinder.cpp
         LibunwindstackUnwinder.h
         MakeUniqueForOverwrite.h
@@ -35,6 +37,7 @@ target_sources(OrbitLinuxTracing PRIVATE
         PerfEventProcessor2.cpp
         PerfEventProcessor2.h
         PerfEventReaders.h
+        PerfEventReaders.cpp
         PerfEventRecords.h
         PerfEventRingBuffer.cpp
         PerfEventRingBuffer.h

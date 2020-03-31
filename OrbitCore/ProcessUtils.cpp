@@ -31,6 +31,7 @@
 #include <streambuf>
 
 #include "absl/strings/str_format.h"
+#include "absl/strings/strip.h"
 
 // Is64BitProcess function taken from Very Sleepy
 #ifdef _WIN64
@@ -44,13 +45,6 @@ Wow64SuspendThread_t* fn_Wow64SuspendThread =
     (Wow64SuspendThread_t*)GetProcAddress(GetModuleHandle(L"kernel32"),
                                           "Wow64SuspendThread");
 #endif
-
-int IsNumeric(const char* ccharptr_CharacterList) {
-  for (; *ccharptr_CharacterList; ccharptr_CharacterList++)
-    if (*ccharptr_CharacterList < '0' || *ccharptr_CharacterList > '9')
-      return 0;  // false
-  return 1;      // true
-}
 
 //-----------------------------------------------------------------------------
 bool ProcessUtils::Is64Bit(HANDLE hProcess) {
@@ -101,17 +95,6 @@ ProcessList::ProcessList() {}
 void ProcessList::Clear() {
   m_Processes.clear();
   m_ProcessesMap.clear();
-}
-
-//-----------------------------------------------------------------------------
-static std::string FileToString(const std::string& a_FileName) {
-  std::stringstream buffer;
-  std::ifstream inFile(a_FileName);
-  if (!inFile.fail()) {
-    buffer << inFile.rdbuf();
-    inFile.close();
-  }
-  return buffer.str();
 }
 
 //-----------------------------------------------------------------------------
@@ -198,28 +181,27 @@ void ProcessList::Refresh() {
   }
 
   while ((de_DirEntity = readdir(dir_proc))) {
-    if (de_DirEntity->d_type == DT_DIR) {
-      if (IsNumeric(de_DirEntity->d_name)) {
-        int pid = atoi(de_DirEntity->d_name);
-        auto iter = m_ProcessesMap.find(pid);
-        std::shared_ptr<Process> process = nullptr;
-        if (iter == m_ProcessesMap.end()) {
-          process = std::make_shared<Process>();
-          std::string dir =
-              absl::StrFormat("%s%s/", PROC_DIRECTORY, de_DirEntity->d_name);
-          std::string comm = FileToString(dir + "comm");
-          std::string cmdline = FileToString(dir + "cmdline");
-          process->m_Name = RTrim(comm);
-          std::replace(cmdline.begin(), cmdline.end(), '\0', ' ');
-          process->m_FullName = cmdline;
-          process->SetID(pid);
-          m_ProcessesMap[pid] = process;
-        } else {
-          process = iter->second;
-        }
-
-        m_Processes.push_back(process);
+    if (de_DirEntity->d_type == DT_DIR && IsAllDigits(de_DirEntity->d_name)) {
+      int pid = atoi(de_DirEntity->d_name);
+      auto iter = m_ProcessesMap.find(pid);
+      std::shared_ptr<Process> process = nullptr;
+      if (iter == m_ProcessesMap.end()) {
+        process = std::make_shared<Process>();
+        std::string dir =
+            absl::StrFormat("%s%s/", PROC_DIRECTORY, de_DirEntity->d_name);
+        process->m_Name = FileToString(dir + "comm");
+        absl::StripTrailingAsciiWhitespace(
+            &process->m_Name);  // Remove new line character.
+        std::string cmdline = FileToString(dir + "cmdline");
+        std::replace(cmdline.begin(), cmdline.end(), '\0', ' ');
+        process->m_FullName = cmdline;
+        process->SetID(pid);
+        m_ProcessesMap[pid] = process;
+      } else {
+        process = iter->second;
       }
+
+      m_Processes.push_back(process);
     }
   }
   closedir(dir_proc);

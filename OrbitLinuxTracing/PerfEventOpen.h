@@ -2,6 +2,7 @@
 #define ORBIT_LINUX_TRACING_PERF_EVENT_OPEN_H_
 
 #include <OrbitBase/Logging.h>
+#include <OrbitBase/SafeStrerror.h>
 #include <asm/perf_regs.h>
 #include <asm/unistd.h>
 #include <linux/perf_event.h>
@@ -12,6 +13,7 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <cstring>
 #include <ctime>
 
 inline int perf_event_open(struct perf_event_attr* attr, pid_t pid, int cpu,
@@ -24,14 +26,14 @@ namespace LinuxTracing {
 inline void perf_event_reset(int file_descriptor) {
   int ret = ioctl(file_descriptor, PERF_EVENT_IOC_RESET, 0);
   if (ret != 0) {
-    ERROR("PERF_EVENT_IOC_RESET: %d", ret);
+    ERROR("PERF_EVENT_IOC_RESET: %s", SafeStrerror(errno));
   }
 }
 
 inline void perf_event_enable(int file_descriptor) {
   int ret = ioctl(file_descriptor, PERF_EVENT_IOC_ENABLE, 0);
   if (ret != 0) {
-    ERROR("PERF_EVENT_IOC_ENABLE: %d", ret);
+    ERROR("PERF_EVENT_IOC_ENABLE: %s", SafeStrerror(errno));
   }
 }
 
@@ -43,21 +45,32 @@ inline void perf_event_reset_and_enable(int file_descriptor) {
 inline void perf_event_disable(int file_descriptor) {
   int ret = ioctl(file_descriptor, PERF_EVENT_IOC_DISABLE, 0);
   if (ret != 0) {
-    ERROR("PERF_EVENT_IOC_DISABLE: %d", ret);
+    ERROR("PERF_EVENT_IOC_DISABLE: %s", SafeStrerror(errno));
   }
 }
 
 inline void perf_event_redirect(int from_fd, int to_fd) {
   int ret = ioctl(from_fd, PERF_EVENT_IOC_SET_OUTPUT, to_fd);
   if (ret != 0) {
-    ERROR("PERF_EVENT_IOC_SET_OUTPUT: %d\n", ret);
+    ERROR("PERF_EVENT_IOC_SET_OUTPUT: %s", SafeStrerror(errno));
   }
 }
 
-// This must be in sync with struct perf_event_sample_id_tid_time_cpu in
-// PerfEventRecords.h.
-static constexpr uint64_t SAMPLE_TYPE_TID_TIME_CPU =
-    PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_CPU;
+inline uint64_t perf_event_get_id(int file_descriptor) {
+  uint64_t id;
+  int ret = ioctl(file_descriptor, PERF_EVENT_IOC_ID, &id);
+  if (ret != 0) {
+    ERROR("PERF_EVENT_IOC_ID: %s", SafeStrerror(errno));
+    return 0;
+  }
+  return id;
+}
+
+// This must be in sync with struct perf_event_sample_id_tid_time_streamid_cpu
+// in PerfEventRecords.h.
+static constexpr uint64_t SAMPLE_TYPE_TID_TIME_STREAMID_CPU =
+    PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_STREAM_ID |
+    PERF_SAMPLE_CPU;
 
 // Sample all registers: they might all be necessary for DWARF-based stack
 // unwinding.
@@ -105,6 +118,13 @@ int uretprobes_event_open(const char* module, uint64_t function_offset,
 
 // Create the ring buffer to use perf_event_open in sampled mode.
 void* perf_event_open_mmap_ring_buffer(int fd, uint64_t mmap_length);
+
+// perf_event_open for tracepoint events. This opens a perf event for the
+// tracepoint given by the category (for example, "sched") and the name
+// (for example, "sched_waking"). Returns the file descriptor for the
+// perf event or -1 in case of any errors.
+int tracepoint_event_open(const char* tracepoint_category,
+                          const char* tracepoint_name, pid_t pid, int32_t cpu);
 
 }  // namespace LinuxTracing
 

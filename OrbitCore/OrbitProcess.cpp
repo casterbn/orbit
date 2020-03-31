@@ -4,6 +4,8 @@
 
 #include "OrbitProcess.h"
 
+#include <absl/strings/ascii.h>
+
 #include <utility>
 
 #include "Core.h"
@@ -16,6 +18,7 @@
 #include "Pdb.h"
 #include "ScopeTimer.h"
 #include "Serialization.h"
+#include "Utils.h"
 
 #ifdef _WIN32
 #include <tlhelp32.h>
@@ -106,7 +109,7 @@ void Process::ListModules() {
 #ifdef _WIN32
   SymUtils::ListModules(m_Handle, m_Modules);
 #else
-  LinuxUtils::ListModules(m_ID, m_Modules);
+  LinuxUtils::ListModules(m_ID, &m_Modules);
 #endif
 
   for (auto& pair : m_Modules) {
@@ -170,6 +173,8 @@ void Process::EnumerateThreads() {
   for (std::shared_ptr<Thread>& thread : m_Threads) {
     m_ThreadIds.insert(thread->m_TID);
   }
+#else
+  m_ThreadNames = LinuxUtils::GetThreadNames(m_ID);
 #endif
 }
 
@@ -276,7 +281,7 @@ std::shared_ptr<Module> Process::GetModuleFromAddress(DWORD64 a_Address) {
 
 //-----------------------------------------------------------------------------
 std::shared_ptr<Module> Process::GetModuleFromName(const std::string& a_Name) {
-  auto iter = m_NameToModuleMap.find(a_Name);
+  auto iter = m_NameToModuleMap.find(absl::AsciiStrToLower(a_Name));
   if (iter != m_NameToModuleMap.end()) {
     return iter->second;
   }
@@ -396,29 +401,6 @@ void Process::FindPdbs(const std::vector<std::string>& a_SearchLocations) {
 }
 
 //-----------------------------------------------------------------------------
-void Process::FillModuleDebugInfo(ModuleDebugInfo& a_ModuleDebugInfo) {
-  PRINT_VAR(m_FullName);
-
-  // Get module from name
-  std::string name = ToLower(a_ModuleDebugInfo.m_Name);
-  std::shared_ptr<Module> module = GetModuleFromName(name);
-
-  if (module) {
-    PRINT_VAR(module->m_FullName);
-    module->LoadDebugInfo();
-    const std::string& moduleName = module->m_FullName;
-    module->m_Pdb->LoadPdb(moduleName.c_str());
-    a_ModuleDebugInfo.m_Functions = module->m_Pdb->GetFunctions();
-    a_ModuleDebugInfo.load_bias = module->m_Pdb->GetLoadBias();
-  } else {
-    PRINT_VAR(a_ModuleDebugInfo.m_Name);
-    for (auto& pair : m_NameToModuleMap) {
-      PRINT_VAR(pair.first);
-    }
-  }
-}
-
-//-----------------------------------------------------------------------------
 bool Process::IsElevated(HANDLE a_Process) {
 #ifdef _WIN32
   bool fRet = false;
@@ -532,7 +514,7 @@ void Process::FindCoreFunctions() {
         {
             func->Select();
             func->m_OrbitType = Function::FREE;
-        } 
+        }
         else if( Contains( name, L"realloc" ) )
         {
             func->Select();
@@ -543,7 +525,7 @@ void Process::FindCoreFunctions() {
 }
 
 //-----------------------------------------------------------------------------
-ORBIT_SERIALIZE(Process, 1) {
+ORBIT_SERIALIZE(Process, 2) {
   ORBIT_NVP_VAL(0, m_Name);
   ORBIT_NVP_VAL(0, m_FullName);
   ORBIT_NVP_VAL(0, m_ID);
@@ -556,4 +538,5 @@ ORBIT_SERIALIZE(Process, 1) {
   ORBIT_NVP_VAL(0, m_NameToModuleMap);
   ORBIT_NVP_VAL(0, m_ThreadIds);
   ORBIT_NVP_VAL(1, m_Modules);
+  ORBIT_NVP_VAL(2, m_ThreadNames);
 }

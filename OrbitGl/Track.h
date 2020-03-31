@@ -38,7 +38,7 @@ class Track : public Pickable {
   uint32_t GetNumTimers() const { return m_NumTimers; }
   TickType GetMinTime() const { return m_MinTime; }
   TickType GetMaxTime() const { return m_MaxTime; }
-  
+
   virtual std::vector<std::shared_ptr<TimerChain>> GetTimers() {return {}; }
   virtual std::vector<std::shared_ptr<TimerChain>> GetAllChains() {return {}; }
 
@@ -47,6 +47,18 @@ class Track : public Pickable {
     return m_Moving ? m_MousePos[1] - m_MousePos[0] : Vec2(0, 0);
   }
   void SetName(const std::string& a_Name) { m_Name = a_Name; }
+
+  enum LabelDisplayMode {
+    NAME_AND_TID,
+    TID_ONLY,
+    NAME_ONLY,
+    EMPTY
+  };
+
+  void SetLabelDisplayMode(LabelDisplayMode label_display_mode) {
+    label_display_mode_ = label_display_mode;
+  }
+
   const std::string& GetName() const { return m_Name; }
   void SetTimeGraph(TimeGraph* a_TimeGraph) { m_TimeGraph = a_TimeGraph; }
   void SetPos(float a_X, float a_Y);
@@ -67,9 +79,11 @@ class Track : public Pickable {
   bool m_Moving;
   std::string m_Name;
   uint32_t m_ID;
+  LabelDisplayMode label_display_mode_;
   Color m_Color;
   bool m_Visible = true;
   std::atomic<uint32_t> m_NumTimers;
   std::atomic<TickType> m_MinTime;
   std::atomic<TickType> m_MaxTime;
+  bool m_PickingEnabled = false;
 };
