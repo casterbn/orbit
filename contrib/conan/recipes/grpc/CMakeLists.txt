@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(cmake_wrapper)
 
+set(CMAKE_CXX_STANDARD 17)
+
 include(conanbuildinfo.cmake)
 conan_basic_setup(TARGETS)
 
@@ -12,5 +14,8 @@ list(GET _gRPC_PROTOBUF_WELLKNOWN_INCLUDE_DIR 0 _gRPC_PROTOBUF_WELLKNOWN_INCLUDE
 
 set(OPENSSL_ROOT_DIR "${CONAN_OPENSSL_ROOT}")
 list(APPEND CMAKE_FIND_ROOT_PATH "${CONAN_OPENSSL_ROOT}")
+
+set(gRPC_CARES_PROVIDER "none" CACHE STRING "" FORCE)
+set(_gRPC_CARES_LIBRARIES "CONAN_PKG::c-ares")
 
 add_subdirectory("source_subfolder")

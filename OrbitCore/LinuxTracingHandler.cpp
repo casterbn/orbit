@@ -1,16 +1,19 @@
 #include "LinuxTracingHandler.h"
 
 #include <functional>
-#include <optional>
 
 #include "Callstack.h"
 #include "ContextSwitch.h"
 #include "OrbitModule.h"
 #include "Params.h"
-#include "Path.h"
-#include "Pdb.h"
 #include "TcpServer.h"
+#include "absl/flags/flag.h"
 #include "llvm/Demangle/Demangle.h"
+
+// TODO: This is a temporary feature flag. Remove this once we enable this
+//  globally.
+ABSL_FLAG(bool, trace_gpu_driver, false,
+          "Enables tracing of GPU driver tracepoint events");
 
 void LinuxTracingHandler::Start() {
   pid_t pid = target_process_->GetID();
@@ -33,6 +36,7 @@ void LinuxTracingHandler::Start() {
   tracer_->SetTraceContextSwitches(GParams.m_TrackContextSwitches);
   tracer_->SetTraceCallstacks(true);
   tracer_->SetTraceInstrumentedFunctions(true);
+  tracer_->SetTraceGpuDriver(absl::GetFlag(FLAGS_trace_gpu_driver));
 
   tracer_->Start();
 }
@@ -139,7 +143,7 @@ void LinuxTracingHandler::OnFunctionCall(
   session_->RecordTimer(std::move(timer));
 }
 
-pid_t LinuxTracingHandler::TimelineToThreadId(const std::string_view timeline) {
+pid_t LinuxTracingHandler::TimelineToThreadId(std::string_view timeline) {
   auto it = timeline_to_thread_id_.find(timeline);
   if (it != timeline_to_thread_id_.end()) {
     return it->second;
@@ -151,8 +155,7 @@ pid_t LinuxTracingHandler::TimelineToThreadId(const std::string_view timeline) {
   return new_id;
 }
 
-void LinuxTracingHandler::OnGpuJob(
-    const LinuxTracing::GpuJob& gpu_job) {
+void LinuxTracingHandler::OnGpuJob(const LinuxTracing::GpuJob& gpu_job) {
   Timer timer_user_to_sched;
   timer_user_to_sched.m_TID = TimelineToThreadId(gpu_job.GetTimeline());
   timer_user_to_sched.m_SubmitTID = gpu_job.GetTid();

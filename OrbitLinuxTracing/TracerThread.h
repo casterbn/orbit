@@ -52,16 +52,25 @@ class TracerThread {
     trace_instrumented_functions_ = trace_instrumented_functions;
   }
 
+  void SetTraceGpuDriver(bool trace_gpu_driver) {
+    trace_gpu_driver_ = trace_gpu_driver;
+  }
+
   void Run(const std::shared_ptr<std::atomic<bool>>& exit_requested);
 
  private:
-  bool OpenRingBufferForGpuTracepoint(
+  bool OpenContextSwitches(const std::vector<int32_t>& cpus);
+  void InitUprobesEventProcessor();
+  bool OpenUprobes(const std::vector<int32_t>& cpus);
+  bool OpenMmapTask(const std::vector<int32_t>& cpus);
+  bool OpenSampling(const std::vector<int32_t>& cpus);
+
+  bool InitGpuTracepointEventProcessor();
+  static bool OpenRingBufferForGpuTracepoint(
       const char* tracepoint_category, const char* tracepoint_name, int32_t cpu,
       std::vector<int>* gpu_tracing_fds,
-      std::vector<PerfEventRingBuffer>* ring_buffers);
-
+      std::vector<PerfEventRingBuffer>* gpu_ring_buffers);
   bool OpenGpuTracepoints(const std::vector<int32_t>& cpus);
-  bool InitGpuTracepointEventProcessor();
 
   void ProcessContextSwitchEvent(const perf_event_header& header,
                                  PerfEventRingBuffer* ring_buffer);
@@ -90,7 +99,7 @@ class TracerThread {
   static constexpr int32_t ROUND_ROBIN_POLLING_BATCH_SIZE = 5;
 
   static constexpr uint64_t CONTEXT_SWITCHES_RING_BUFFER_SIZE_KB = 256;
-  static constexpr uint64_t UPROBES_RING_BUFFER_SIZE_KB = 32 * 1024;
+  static constexpr uint64_t UPROBES_RING_BUFFER_SIZE_KB = 2 * 1024;
   static constexpr uint64_t MMAP_TASK_RING_BUFFER_SIZE_KB = 64;
   static constexpr uint64_t SAMPLING_RING_BUFFER_SIZE_KB = 2 * 1024;
   static constexpr uint64_t GPU_TRACING_RING_BUFFER_SIZE_KB = 256;
@@ -107,10 +116,10 @@ class TracerThread {
   bool trace_context_switches_ = true;
   bool trace_callstacks_ = true;
   bool trace_instrumented_functions_ = true;
+  bool trace_gpu_driver_ = true;
 
   std::vector<int> tracing_fds_;
   std::vector<PerfEventRingBuffer> ring_buffers_;
-  absl::flat_hash_set<int> uprobes_fds_;
   absl::flat_hash_map<uint64_t, const Function*> uprobes_ids_to_function_;
   absl::flat_hash_set<int> gpu_tracing_fds_;
 
@@ -121,17 +130,29 @@ class TracerThread {
   std::shared_ptr<GpuTracepointEventProcessor> gpu_event_processor_;
 
   struct EventStats {
-    void Reset() { *this = EventStats(); }
-    uint64_t event_count_begin_ns = MonotonicTimestampNs();
+    void Reset() {
+      event_count_begin_ns = MonotonicTimestampNs();
+      sched_switch_count = 0;
+      sample_count = 0;
+      uprobes_count = 0;
+      lost_count = 0;
+      lost_count_per_buffer.clear();
+      *unwind_error_count = 0;
+    }
+
+    uint64_t event_count_begin_ns = 0;
     uint64_t sched_switch_count = 0;
     uint64_t sample_count = 0;
     uint64_t uprobes_count = 0;
     uint64_t gpu_events_count = 0;
     uint64_t lost_count = 0;
     absl::flat_hash_map<PerfEventRingBuffer*, uint64_t> lost_count_per_buffer{};
+    std::shared_ptr<std::atomic<uint64_t>> unwind_error_count =
+        std::make_unique<std::atomic<uint64_t>>(0);
   };
 
-  EventStats stats_;
+  static constexpr uint64_t EVENT_STATS_WINDOW_S = 5;
+  EventStats stats_{};
 };
 
 }  // namespace LinuxTracing
