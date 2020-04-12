@@ -48,11 +48,10 @@ CaptureWindow::CaptureWindow() {
   m_WorldMaxY = 0;
   m_ProcessX = 0;
 
-  GTimerManager->m_TimerAddedCallbacks.push_back(
-      [=](Timer& a_Timer) { this->OnTimerAdded(a_Timer); });
-  GTimerManager->m_ContextSwitchAddedCallback = [=](const ContextSwitch& a_CS) {
-    this->OnContextSwitchAdded(a_CS);
-  };
+  GTimerManager->m_TimerAddedCallbacks.emplace_back(
+      [this](Timer& a_Timer) { this->OnTimerAdded(a_Timer); });
+  GTimerManager->m_ContextSwitchAddedCallback =
+      [this](const ContextSwitch& a_CS) { this->OnContextSwitchAdded(a_CS); };
 
   m_HoverDelayMs = 300;
   m_CanHover = false;
@@ -441,8 +440,8 @@ void CaptureWindow::MouseWheelMoved(int a_X, int a_Y, int a_Delta,
                                     bool a_Ctrl) {
   if (a_Delta == 0) return;
 
-  // Zoom
-  int delta = -a_Delta / abs(a_Delta);
+  // Normalize and invert sign, so that delta < 0 is zoom in.
+  int delta = a_Delta < 0 ? 1 : -1;
 
   if (delta < m_MinWheelDelta) m_MinWheelDelta = delta;
   if (delta > m_MaxWheelDelta) m_MaxWheelDelta = delta;
@@ -474,11 +473,30 @@ void CaptureWindow::MouseWheelMoved(int a_X, int a_Y, int a_Delta,
     UpdateSceneBox();
   }
 
+  // Use the original sign of a_Delta here.
   Orbit_ImGui_ScrollCallback(this, -delta);
 
   m_CanHover = true;
 
   NeedsUpdate();
+}
+
+//-----------------------------------------------------------------------------
+void CaptureWindow::MouseWheelMovedHorizontally(int /*a_X*/, int /*a_Y*/,
+                                                int a_Delta, bool /*a_Ctrl*/) {
+  if (a_Delta == 0) return;
+
+  // Normalize and invert sign, so that delta < 0 is left.
+  int delta = a_Delta < 0 ? 1 : -1;
+
+  if (delta < 0) {
+    Pan(0.1f);
+  } else {
+    Pan(-0.1f);
+  }
+
+  // Use the original sign of a_Delta here.
+  Orbit_ImGui_ScrollCallback(this, -delta);
 }
 
 //-----------------------------------------------------------------------------
@@ -580,8 +598,10 @@ std::vector<std::wstring> CaptureWindow::GetContextMenu() {
   static std::vector<std::wstring> menu = {GOTO_CALLSTACK, GOTO_SOURCE};
   static std::vector<std::wstring> emptyMenu;
   TextBox* selection = Capture::GSelectedTextBox;
-  return selection && !selection->GetTimer().IsCoreActivity() ? menu
-                                                              : emptyMenu;
+  return selection != nullptr && !selection->GetTimer().IsCoreActivity() &&
+                 selection->GetTimer().m_Type != Timer::GPU_ACTIVITY
+             ? menu
+             : emptyMenu;
 }
 
 //-----------------------------------------------------------------------------
@@ -749,7 +769,6 @@ float CaptureWindow::GetTopBarTextY() {
 
 //-----------------------------------------------------------------------------
 void CaptureWindow::DrawStatus() {
-  float iconSize = m_Slider.GetPixelHeight();
   int s_PosX = 0;
   float s_PosY = GetTopBarTextY();
   static int s_IncY = 20;
@@ -760,8 +779,8 @@ void CaptureWindow::DrawStatus() {
   int PosY = (int)s_PosY;
   int LeftY = (int)s_PosY;
 
-  m_TextRenderer.AddText2D(" Press 'H' for help", s_PosX, LeftY, Z_VALUE_TEXT_UI,
-                           s_Color);
+  m_TextRenderer.AddText2D(" Press 'H' for help", s_PosX, LeftY,
+                           Z_VALUE_TEXT_UI, s_Color);
   LeftY += s_IncY;
 
   if (Capture::GInjected) {

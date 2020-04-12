@@ -14,8 +14,6 @@
 
 class LinuxTracingHandler : LinuxTracing::TracerListener {
  public:
-  static constexpr double DEFAULT_SAMPLING_FREQUENCY = 1000.0;
-
   LinuxTracingHandler(SamplingProfiler* sampling_profiler,
                       LinuxTracingSession* session, Process* target_process,
                       std::map<uint64_t, Function*>* selected_function_map,
@@ -60,7 +58,7 @@ class LinuxTracingHandler : LinuxTracing::TracerListener {
   absl::flat_hash_map<std::string, pid_t> timeline_to_thread_id_;
   // TODO: This is a hack to reuse thread tracks in the UI to show GPU events.
   // This needs to be fixed.
-  pid_t current_timeline_thread_id_ = 100000;
+  pid_t current_timeline_thread_id_ = 1'000'000'000;
 };
 
 #endif  // ORBIT_CORE_LINUX_TRACING_HANDLER_H_

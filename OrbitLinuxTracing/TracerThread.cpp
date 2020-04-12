@@ -50,7 +50,8 @@ void TracerThread::InitUprobesEventProcessor() {
   auto uprobes_unwinding_visitor =
       std::make_unique<UprobesUnwindingVisitor>(ReadMaps(pid_));
   uprobes_unwinding_visitor->SetListener(listener_);
-  uprobes_unwinding_visitor->SetUnwindErrorCounter(stats_.unwind_error_count);
+  uprobes_unwinding_visitor->SetUnwindErrorsAndDiscardedSamplesCounters(
+      stats_.unwind_error_count, stats_.discarded_samples_in_uretprobes_count);
   // Switch between PerfEventProcessor and PerfEventProcessor2 here.
   // PerfEventProcessor2 is supposedly faster but assumes that events from the
   // same perf_event_open ring buffer are already sorted.
@@ -316,13 +317,17 @@ void TracerThread::Run(
     cpuset_cpus = all_cpus;
   }
 
+  // As we open two perf_event_open file descriptors (uprobe and uretprobe) per
+  // cpu per instrumented function, increase the maximum number of open files.
+  SetMaxOpenFilesSoftLimit(GetMaxOpenFilesHardLimit());
+
   bool perf_event_open_errors = false;
 
   if (trace_context_switches_) {
     perf_event_open_errors |= !OpenContextSwitches(all_cpus);
   }
 
-  InitUprobesEventProcessor();
+  perf_event_open_errors |= !OpenMmapTask(cpuset_cpus);
 
   bool uprobes_event_open_errors = false;
   if (trace_instrumented_functions_) {
@@ -330,11 +335,15 @@ void TracerThread::Run(
     perf_event_open_errors |= uprobes_event_open_errors;
   }
 
-  perf_event_open_errors |= !OpenMmapTask(cpuset_cpus);
-
   if (trace_callstacks_) {
     perf_event_open_errors |= !OpenSampling(cpuset_cpus);
   }
+
+  // This takes an initial snapshot of the maps. Call it after OpenUprobes, as
+  // calling perf_event_open for uprobes (just calling it, it is not necessary
+  // to enable the file descriptor) causes a new [uprobes] map entry, and we
+  // want to catch it.
+  InitUprobesEventProcessor();
 
   if (!InitGpuTracepointEventProcessor()) {
     ERROR("Failed to initialize GPU tracepoint event processor");
@@ -426,8 +435,9 @@ void TracerThread::Run(
             // Note: as we are recording context switches on CPUs and not on
             // threads, we don't expect this type of record.
             ERROR(
-                "Unexpected PERF_RECORD_SWITCH (only "
-                "PERF_RECORD_SWITCH_CPU_WIDE are expected)");
+                "Unexpected PERF_RECORD_SWITCH in ring buffer '%s' (only "
+                "PERF_RECORD_SWITCH_CPU_WIDE are expected)",
+                ring_buffer.GetName().c_str());
             ProcessContextSwitchEvent(header, &ring_buffer);
             break;
           case PERF_RECORD_SWITCH_CPU_WIDE:
@@ -448,8 +458,21 @@ void TracerThread::Run(
           case PERF_RECORD_LOST:
             ProcessLostEvent(header, &ring_buffer);
             break;
+          case PERF_RECORD_THROTTLE:
+            // We don't use throttle/unthrottle events, but log them separately
+            // from the default 'Unexpected perf_event_header::type' case.
+            LOG("PERF_RECORD_THROTTLE in ring buffer '%s'",
+                ring_buffer.GetName().c_str());
+            ring_buffer.SkipRecord(header);
+            break;
+          case PERF_RECORD_UNTHROTTLE:
+            LOG("PERF_RECORD_UNTHROTTLE in ring buffer '%s'",
+                ring_buffer.GetName().c_str());
+            ring_buffer.SkipRecord(header);
+            break;
           default:
-            ERROR("Unexpected perf_event_header::type: %u", header.type);
+            ERROR("Unexpected perf_event_header::type in ring buffer '%s': %u",
+                  ring_buffer.GetName().c_str(), header.type);
             ring_buffer.SkipRecord(header);
             break;
         }
@@ -480,14 +503,15 @@ void TracerThread::ProcessContextSwitchEvent(const perf_event_header& header,
                                              PerfEventRingBuffer* ring_buffer) {
   ContextSwitchPerfEvent event;
   ring_buffer->ConsumeRecord(header, &event.ring_buffer_record);
+  pid_t pid = event.GetPid();
   pid_t tid = event.GetTid();
   uint16_t cpu = static_cast<uint16_t>(event.GetCpu());
   uint64_t time = event.GetTimestamp();
 
   if (event.IsSwitchOut()) {
-    listener_->OnContextSwitchOut(ContextSwitchOut(tid, cpu, time));
+    listener_->OnContextSwitchOut(ContextSwitchOut(pid, tid, cpu, time));
   } else {
-    listener_->OnContextSwitchIn(ContextSwitchIn(tid, cpu, time));
+    listener_->OnContextSwitchIn(ContextSwitchIn(pid, tid, cpu, time));
   }
 
   ++stats_.sched_switch_count;
@@ -497,16 +521,20 @@ void TracerThread::ProcessContextSwitchCpuWideEvent(
     const perf_event_header& header, PerfEventRingBuffer* ring_buffer) {
   SystemWideContextSwitchPerfEvent event;
   ring_buffer->ConsumeRecord(header, &event.ring_buffer_record);
+  pid_t pid = event.GetPid();
   pid_t tid = event.GetTid();
   uint16_t cpu = static_cast<uint16_t>(event.GetCpu());
   uint64_t time = event.GetTimestamp();
 
   // Switches with pid/tid 0 are associated with idle state, discard them.
   if (tid != 0) {
+    // TODO: Consider deferring context switches.
     if (event.IsSwitchOut()) {
-      listener_->OnContextSwitchOut(ContextSwitchOut(tid, cpu, time));
+      // Careful: when a switch out is caused by the thread exiting, pid and tid
+      // have value -1.
+      listener_->OnContextSwitchOut(ContextSwitchOut(pid, tid, cpu, time));
     } else {
-      listener_->OnContextSwitchIn(ContextSwitchIn(tid, cpu, time));
+      listener_->OnContextSwitchIn(ContextSwitchIn(pid, tid, cpu, time));
     }
   }
 
@@ -565,7 +593,14 @@ void TracerThread::ProcessSampleEvent(const perf_event_header& header,
 
   constexpr size_t size_of_uretprobes = sizeof(perf_event_empty_sample);
   bool is_uretprobe = !is_gpu_event && (header.size == size_of_uretprobes);
-  CHECK(is_gpu_event + is_uprobe + is_uretprobe <= 1);
+
+  constexpr size_t size_of_sample = sizeof(perf_event_stack_sample);
+  bool is_sample = !is_gpu_event && (header.size == size_of_sample);
+
+  static_assert(size_of_uprobes != size_of_uretprobes &&
+                size_of_uprobes != size_of_sample &&
+                size_of_uretprobes != size_of_sample);
+  CHECK(is_gpu_event + is_uprobe + is_uretprobe + is_sample <= 1);
 
   if (is_uprobe) {
     auto event = make_unique_for_overwrite<UprobesPerfEvent>();
@@ -590,14 +625,14 @@ void TracerThread::ProcessSampleEvent(const perf_event_header& header,
     ++stats_.uprobes_count;
 
   } else if (is_gpu_event) {
-    // TODO: Consider deferring events.
+    // TODO: Consider deferring GPU events.
     auto event = ConsumeSampleRaw(ring_buffer, header);
     // Do not filter GPU tracepoint events based on pid as we want to have
     // visibility into all GPU activity across the system.
     gpu_event_processor_->PushEvent(event);
     ++stats_.gpu_events_count;
 
-  } else {
+  } else if (is_sample) {
     pid_t pid = ReadSampleRecordPid(ring_buffer);
     if (pid != pid_) {
       ring_buffer->SkipRecord(header);
@@ -607,6 +642,17 @@ void TracerThread::ProcessSampleEvent(const perf_event_header& header,
     event->SetOriginFileDescriptor(fd);
     DeferEvent(std::move(event));
     ++stats_.sample_count;
+
+  } else {
+    // Except for GPU driver events, which have variable size and are determined
+    // with gpu_tracing_fds_.contains(fd), skip PERF_RECORD_SAMPLEs with an
+    // unknown size. Samples to skip are normally time-based samples with
+    // abi == PERF_SAMPLE_REGS_ABI_NONE and no registers, and with size == 0 and
+    // no stack. Usually, these samples have pid == tid == 0, but that's not
+    // always the case: for example, when a process exits while tracing, we
+    // might get a sample with pid and tid != 0 but still with
+    // abi == PERF_SAMPLE_REGS_ABI_NONE and size == 0.
+    ring_buffer->SkipRecord(header);
   }
 }
 
@@ -686,6 +732,11 @@ void TracerThread::PrintStatsIfTimerElapsed() {
     uint64_t unwind_error_count = *stats_.unwind_error_count;
     LOG("  unwind errors: %.0f (%.1f%%)", unwind_error_count / actual_window_s,
         100.0 * unwind_error_count / stats_.sample_count);
+    uint64_t discarded_samples_in_uretprobes_count =
+        *stats_.discarded_samples_in_uretprobes_count;
+    LOG("  discarded samples in u(ret)probes: %.0f (%.1f%%)",
+        discarded_samples_in_uretprobes_count / actual_window_s,
+        100.0 * discarded_samples_in_uretprobes_count / stats_.sample_count);
     stats_.Reset();
   }
 }

@@ -34,7 +34,8 @@ function(grpc_helper)
             "${bin_dir}" -I ${src_folder}
             --plugin=protoc-gen-grpc="${_HELPER_GRPC_CPP_PLUGIN}"
             "${src_filepath}"
-          DEPENDS "${source_filepath}" "${bin_dir}")
+          MAIN_DEPENDENCY "${src_filepath}"
+          DEPENDS "${bin_dir}")
 
         add_library(${target_name} OBJECT)
         target_include_directories(${target_name} PUBLIC ${bin_dir})
@@ -42,11 +43,11 @@ function(grpc_helper)
           ${target_name} PUBLIC gRPC::grpc++_reflection gRPC::grpc++_unsecure
                                 protobuf::libprotobuf)
         target_sources(${target_name} PRIVATE "${proto_cpp}" "${grpc_cpp}")
-        target_sources(${target_name} PUBLIC "${proto_h}" "${grpc_h}")
 
       endif()
 
       target_link_libraries(${ARGV0} PUBLIC ${target_name})
+      add_dependencies(${ARGV0} ${target_name})
     endif()
   endforeach()
 

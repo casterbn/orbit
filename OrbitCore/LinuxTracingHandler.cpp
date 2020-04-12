@@ -10,6 +10,11 @@
 #include "absl/flags/flag.h"
 #include "llvm/Demangle/Demangle.h"
 
+// TODO: Remove this flag once we enable specifying the sampling frequency or
+//  period in the client.
+ABSL_FLAG(uint16_t, sampling_frequency, 1000,
+          "Frequency of callstack sampling in samples per second");
+
 // TODO: This is a temporary feature flag. Remove this once we enable this
 //  globally.
 ABSL_FLAG(bool, trace_gpu_driver, false,
@@ -18,7 +23,7 @@ ABSL_FLAG(bool, trace_gpu_driver, false,
 void LinuxTracingHandler::Start() {
   pid_t pid = target_process_->GetID();
 
-  double sampling_frequency = DEFAULT_SAMPLING_FREQUENCY;
+  double sampling_frequency = absl::GetFlag(FLAGS_sampling_frequency);
 
   std::vector<LinuxTracing::Function> selected_functions;
   selected_functions.reserve(selected_function_map_->size());
@@ -76,6 +81,7 @@ void LinuxTracingHandler::OnContextSwitchIn(
   ++(*num_context_switches_);
 
   ContextSwitch context_switch(ContextSwitch::In);
+  context_switch.m_ProcessId = context_switch_in.GetPid();
   context_switch.m_ThreadId = context_switch_in.GetTid();
   context_switch.m_Time = context_switch_in.GetTimestampNs();
   context_switch.m_ProcessorIndex = context_switch_in.GetCore();
@@ -89,6 +95,7 @@ void LinuxTracingHandler::OnContextSwitchOut(
   ++(*num_context_switches_);
 
   ContextSwitch context_switch(ContextSwitch::Out);
+  context_switch.m_ProcessId = context_switch_out.GetPid();
   context_switch.m_ThreadId = context_switch_out.GetTid();
   context_switch.m_Time = context_switch_out.GetTimestampNs();
   context_switch.m_ProcessorIndex = context_switch_out.GetCore();
