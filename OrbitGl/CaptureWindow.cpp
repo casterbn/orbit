@@ -233,6 +233,7 @@ void CaptureWindow::Pick(PickingID a_PickingID, int a_X, int a_Y) {
 
 //-----------------------------------------------------------------------------
 void CaptureWindow::SelectTextBox(class TextBox* a_TextBox) {
+  if (a_TextBox == nullptr) return;
   Capture::GSelectedTextBox = a_TextBox;
   Capture::GSelectedThreadId = a_TextBox->GetTimer().m_TID;
   Capture::GSelectedCallstack =

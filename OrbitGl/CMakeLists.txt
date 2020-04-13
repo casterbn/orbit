@@ -27,6 +27,7 @@ target_sources(
          GlPanel.h
          GlSlider.h
          GlUtils.h
+         GraphTrack.h
          HomeWindow.h
          Images.h
          ImGuiOrbit.h
@@ -75,6 +76,7 @@ target_sources(
           GlPanel.cpp
           GlSlider.cpp
           GlUtils.cpp
+          GraphTrack.cpp
           HomeWindow.cpp
           ImGuiOrbit.cpp
           ImmediateWindow.cpp

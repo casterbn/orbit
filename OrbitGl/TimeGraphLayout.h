@@ -27,6 +27,7 @@ class TimeGraphLayout {
   float GetTextBoxHeight() const { return m_TextBoxHeight; }
   float GetTextCoresHeight() const { return m_CoresHeight; }
   float GetEventTrackHeight() const { return m_EventTrackHeight; }
+  float GetGraphTrackHeight() const { return m_GraphTrackHeight; }
   float GetTrackBottomMargin() const { return m_TrackBottomMargin; }
   float GetTrackLabelOffset() const { return m_TrackLabelOffset; }
   float GetSliderWidth() const { return m_SliderWidth; }
@@ -61,6 +62,7 @@ class TimeGraphLayout {
   float m_TextBoxHeight;
   float m_CoresHeight;
   float m_EventTrackHeight;
+  float m_GraphTrackHeight;
   float m_TrackBottomMargin;
   float m_TrackLabelOffset;
   float m_SliderWidth;

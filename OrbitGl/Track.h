@@ -4,8 +4,8 @@
 #pragma once
 
 #include <atomic>
-#include <vector>
 #include <memory>
+#include <vector>
 
 #include "BlockChain.h"
 #include "CoreMath.h"
@@ -31,6 +31,8 @@ class Track : public Pickable {
   bool Draggable() override { return true; }
   bool Movable() override { return true; }
 
+  virtual void AddTimer(const Timer& timer) {}
+
   virtual float GetHeight() const { return 0.f; };
   bool GetVisible() const { return m_Visible; }
   void SetVisible(bool value) { m_Visible = value; }
@@ -39,8 +41,8 @@ class Track : public Pickable {
   TickType GetMinTime() const { return m_MinTime; }
   TickType GetMaxTime() const { return m_MaxTime; }
 
-  virtual std::vector<std::shared_ptr<TimerChain>> GetTimers() {return {}; }
-  virtual std::vector<std::shared_ptr<TimerChain>> GetAllChains() {return {}; }
+  virtual std::vector<std::shared_ptr<TimerChain>> GetTimers() { return {}; }
+  virtual std::vector<std::shared_ptr<TimerChain>> GetAllChains() { return {}; }
 
   bool IsMoving() const { return m_Moving; }
   Vec2 GetMoveDelta() const {

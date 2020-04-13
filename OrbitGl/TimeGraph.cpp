@@ -15,6 +15,7 @@
 #include "EventTrack.h"
 #include "Geometry.h"
 #include "GlCanvas.h"
+#include "GraphTrack.h"
 #include "Log.h"
 #include "OrbitBase/Logging.h"
 #include "OrbitType.h"
@@ -35,7 +36,9 @@
 TimeGraph* GCurrentTimeGraph = nullptr;
 
 //-----------------------------------------------------------------------------
-TimeGraph::TimeGraph() { m_LastThreadReorder.Start(); }
+TimeGraph::TimeGraph() {
+  m_LastThreadReorder.Start();
+}
 
 //-----------------------------------------------------------------------------
 void TimeGraph::SetStringManager(std::shared_ptr<StringManager> str_manager) {
@@ -71,6 +74,9 @@ void TimeGraph::Clear() {
 
   m_ContextSwitchesMap.clear();
   m_CoreUtilizationMap.clear();
+
+  // Debug
+  tracks_[1] = std::make_shared<GraphTrack>(this);
 }
 
 //-----------------------------------------------------------------------------
@@ -227,6 +233,9 @@ void TimeGraph::ProcessTimer(const Timer& a_Timer) {
     case Timer::CORE_ACTIVITY:
       Capture::GHasContextSwitches = true;
       break;
+    case Timer::TRACKED_VALUE:
+      // TODO
+      break;
     default:
       break;
   }
@@ -238,6 +247,15 @@ void TimeGraph::ProcessTimer(const Timer& a_Timer) {
       ++Capture::GFunctionCountMap[a_Timer.m_FunctionAddress];
       func->UpdateStats(a_Timer);
     }
+  }
+
+  
+  // Debug
+  if (a_Timer.IsType(Timer::CORE_ACTIVITY)) {
+    Timer timer = a_Timer;
+    double* value = (double*)&timer.m_UserData[0];
+    *value = sin(20*timer.m_Start*0.000'000'001);
+    tracks_[1]->AddTimer(timer);
   }
 
   if (!a_Timer.IsType(Timer::THREAD_ACTIVITY) &&
@@ -504,8 +522,7 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
 
     if (!m_Layout.IsThreadVisible(track->GetID())) continue;
 
-    std::vector<std::shared_ptr<TimerChain>> depthChain =
-        track->GetTimers();
+    std::vector<std::shared_ptr<TimerChain>> depthChain = track->GetTimers();
     for (auto& textBoxes : depthChain) {
       if (textBoxes == nullptr) break;
 
@@ -811,11 +828,10 @@ void TimeGraph::Draw(bool a_Picking) {
 //-----------------------------------------------------------------------------
 void TimeGraph::DrawThreadTracks(bool a_Picking) {
   m_Layout.SetNumCores(GetNumCores());
-  const std::vector<ThreadID>& sortedThreadIds = m_Layout.GetSortedThreadIds();
-  for (uint32_t i = 0; i < sortedThreadIds.size(); ++i) {
-    ThreadID threadId = sortedThreadIds[i];
-
-    std::shared_ptr<ThreadTrack> track = GetThreadTrack(threadId);
+  // TODO: sort threads
+  for (auto& pair : tracks_) {
+    ThreadID threadId = pair.first;
+    auto& track = pair.second;
     if (track->GetName().empty()) {
       std::string threadName =
           Capture::GTargetProcess->GetThreadNameFromTID(threadId);
