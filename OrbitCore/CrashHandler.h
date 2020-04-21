@@ -4,7 +4,11 @@
 #ifndef ORBIT_CORE_CRASH_HANDLER_H_
 #define ORBIT_CORE_CRASH_HANDLER_H_
 
+#define CRASHPAD_ENABLED 0
+
+#if CRASHPAD_ENABLED
 #include <client/crashpad_client.h>
+#endif
 
 #include <string>
 
@@ -18,7 +22,10 @@ class CrashHandler {
 
  private:
   inline static bool is_init_{false};
+
+#if CRASHPAD_ENABLED
   crashpad::CrashpadClient crashpad_client_;
+#endif  // ORBIT_CORE_CRASH_HANDLER_H_
 };
 
-#endif  // ORBIT_CORE_CRASH_HANDLER_H_
+#endif

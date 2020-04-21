@@ -4,8 +4,10 @@
 
 #include "CrashHandler.h"
 
+#if CRASHPAD_ENABLED
 #include "client/crash_report_database.h"
 #include "client/settings.h"
+#endif
 
 #include "Core.h"
 #include "OrbitBase/Logging.h"
@@ -14,6 +16,7 @@
 #include "TcpClient.h"
 #include "Version.h"
 
+#if CRASHPAD_ENABLED
 namespace {
 template <typename StringType = base::FilePath::StringType>
 struct StringTypeConverter {
@@ -29,12 +32,14 @@ struct StringTypeConverter<std::wstring> {
   }
 };
 }  // namespace
+#endif
 
 //-----------------------------------------------------------------------------
 CrashHandler::CrashHandler(const std::string& dump_path,
                            const std::string& handler_path,
                            const std::string& crash_server_url,
                            bool is_upload_enabled) {
+#if CRASHPAD_ENABLED
   CHECK(!is_init_);
   is_init_ = true;
 
@@ -63,10 +68,17 @@ CrashHandler::CrashHandler(const std::string& dump_path,
                                 crash_server_url, annotations, arguments,
                                 /*restartable=*/true,
                                 /*asynchronous_start=*/false);
+#else
+UNUSED(dump_path);
+UNUSED(handler_path);
+UNUSED(crash_server_url);
+UNUSED(is_upload_enabled);
+#endif  // CRASHPAD_ENABLED
 }
 
 //-----------------------------------------------------------------------------
 void CrashHandler::DumpWithoutCrash() const {
+#if CRASHPAD_ENABLED
   crashpad::NativeCPUContext cpu_context;
   crashpad::CaptureContext(&cpu_context);
 #ifdef _WIN32
@@ -74,4 +86,5 @@ void CrashHandler::DumpWithoutCrash() const {
 #else
   crashpad_client_.DumpWithoutCrash(&cpu_context);
 #endif
+#endif  // CRASHPAD_ENABLED
 }

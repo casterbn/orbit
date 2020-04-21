@@ -88,7 +88,7 @@ if(NOT WIN32)
   find_package(libunwindstack CONFIG REQUIRED)
 endif()
 find_package(asio CONFIG REQUIRED)
-find_package(crashpad CONFIG REQUIRED)
+#find_package(crashpad CONFIG REQUIRED)
 find_package(GTest REQUIRED)
 find_package(Filesystem REQUIRED)
 
