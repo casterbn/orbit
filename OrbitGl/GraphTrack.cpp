@@ -2,14 +2,16 @@
 
 #include "GlCanvas.h"
 
-GraphTrack::GraphTrack(TimeGraph* time_graph) { 
+GraphTrack::GraphTrack(TimeGraph* time_graph) {
     SetTimeGraph(time_graph);
 }
 
 void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
+  UNUSED(picking);
+
   TimeGraphLayout& layout = m_TimeGraph->GetLayout();
   float threadOffset = layout.GetThreadBlockStart(m_ID);
-  float trackHeight = GetHeight();
+  //float trackHeight = GetHeight();
   float trackWidth = canvas->GetWorldWidth();
 
   SetPos(canvas->GetWorldTopLeftX(), threadOffset);
@@ -27,7 +29,6 @@ void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
 
   float track_z = layout.GetTrackZ();
   float text_z = layout.GetTextZ();
-  float label_offset = layout.GetTrackLabelOffset();
 
   glColor4ubv(&m_Color[0]);
 
@@ -81,7 +82,10 @@ void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
   }
 }
 
-void GraphTrack::OnDrag(int x, int y) {}
+void GraphTrack::OnDrag(int x, int y) {
+  UNUSED(x);
+  UNUSED(y);
+}
 
 void GraphTrack::AddTimer(const Timer& timer) {
   double value = *((double*)(&timer.m_UserData[0]));
@@ -89,7 +93,7 @@ void GraphTrack::AddTimer(const Timer& timer) {
   if (value > max_) max_ = value;
   if (value < min_) min_ = value;
   value_range_ = max_ - min_;
- 
+
  if (value_range_ > 0) inv_value_range_ = 1.0 / value_range_;
 }
 

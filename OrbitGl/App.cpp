@@ -564,7 +564,7 @@ void OrbitApp::MainTick() {
   ++GOrbitApp->m_NumTicks;
 
   if (DoZoom) {
-    GCurrentTimeGraph->UpdateThreadIds();
+    GCurrentTimeGraph->SortTracks();
     GOrbitApp->m_CaptureWindow->ZoomAll();
     GOrbitApp->NeedsRedraw();
     DoZoom = false;

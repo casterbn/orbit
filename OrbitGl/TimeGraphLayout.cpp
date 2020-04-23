@@ -40,73 +40,29 @@ float TimeGraphLayout::GetThreadStart() {
 }
 
 //-----------------------------------------------------------------------------
-float TimeGraphLayout::GetTracksHeight() {
-  return m_NumTracks ? m_NumTracks * m_EventTrackHeight +
-                           std::max(m_NumTracks - 1, 0) * m_SpaceBetweenTracks +
-                           m_SpaceBetweenTracksAndThread
-                     : 0;
-}
+// void CalculateOffsets(
+//     const std::unordered_map<ThreadID, std::shared_ptr<Track> >&
+//         a_ThreadTracks) {
+//   m_ThreadBlockOffsets.clear();
 
-//-----------------------------------------------------------------------------
-void TimeGraphLayout::SortTracksByPosition(
-    const ThreadTrackMap& a_ThreadTracks) {
-  std::vector<std::shared_ptr<Track> > tracks;
+//   float offset = GetThreadStart();
+//   for (ThreadID threadID : m_SortedThreadIds) {
+//     auto iter = a_ThreadTracks.find(threadID);
+//     if (iter == a_ThreadTracks.end()) continue;
 
-  for (auto& pair : a_ThreadTracks) {
-    if (pair.second->GetVisible()) {
-      tracks.push_back(pair.second);
-    }
-  }
+//     std::shared_ptr<Track> track = iter->second;
+//     m_ThreadBlockOffsets[threadID] = offset;
+//     float threadBlockHeight = track->GetHeight();
+//     offset -= (threadBlockHeight + m_SpaceBetweenThreadBlocks);
+//   }
 
-  std::sort(tracks.begin(), tracks.end(),
-            [](const std::shared_ptr<Track>& a,
-               const std::shared_ptr<Track>& b) -> bool {
-              return a->GetPos()[1] > b->GetPos()[1];
-            });
-
-  // Reorder sorted threadIss
-  std::vector<ThreadID> sortedThreadIds;
-  for (auto& track : tracks) {
-    ThreadID tid = track->GetID();
-    if (std::find(m_SortedThreadIds.begin(), m_SortedThreadIds.end(), tid) !=
-        m_SortedThreadIds.end()) {
-      sortedThreadIds.push_back(tid);
-    }
-  }
-
-  m_SortedThreadIds = sortedThreadIds;
-}
-
-//-----------------------------------------------------------------------------
-void TimeGraphLayout::CalculateOffsets(const ThreadTrackMap& a_ThreadTracks) {
-  m_ThreadBlockOffsets.clear();
-
-  m_NumTracks = 1;
-  if (m_DrawFileIO) ++m_NumTracks;
-
-  // TODO: Fix SortTrackByPosition messing up the normal thread sorting.
-  if (false && !Capture::IsCapturing()) {
-    SortTracksByPosition(a_ThreadTracks);
-  }
-
-  float offset = GetThreadStart();
-  for (ThreadID threadID : m_SortedThreadIds) {
-    auto iter = a_ThreadTracks.find(threadID);
-    if (iter == a_ThreadTracks.end()) continue;
-
-    std::shared_ptr<Track> track = iter->second;
-    m_ThreadBlockOffsets[threadID] = offset;
-    float threadBlockHeight = track->GetHeight();
-    offset -= (threadBlockHeight + m_SpaceBetweenThreadBlocks);
-  }
-
-  for (auto& pair : a_ThreadTracks) {
-    auto& track = pair.second;
-    if (track.get() && track->IsMoving()) {
-      m_ThreadBlockOffsets[track->GetID()] = track->GetPos()[1];
-    }
-  }
-}
+//   for (auto& pair : a_ThreadTracks) {
+//     auto& track = pair.second;
+//     if (track.get() && track->IsMoving()) {
+//       m_ThreadBlockOffsets[track->GetID()] = track->GetPos()[1];
+//     }
+//   }
+// }
 
 //-----------------------------------------------------------------------------
 float TimeGraphLayout::GetCoreOffset(int a_CoreId) {
@@ -121,8 +77,8 @@ float TimeGraphLayout::GetCoreOffset(int a_CoreId) {
 
 //-----------------------------------------------------------------------------
 float TimeGraphLayout::GetThreadOffset(ThreadID a_TID, int a_Depth) {
-  return m_ThreadBlockOffsets[a_TID] - GetTracksHeight() -
-         (a_Depth + 1) * m_TextBoxHeight;
+  return m_ThreadBlockOffsets[a_TID] -
+         /*GetTracksHeight() - */ (a_Depth + 1) * m_TextBoxHeight;
 }
 
 //-----------------------------------------------------------------------------
@@ -138,19 +94,6 @@ float TimeGraphLayout::GetSamplingTrackOffset(ThreadID a_TID) {
 }
 
 //-----------------------------------------------------------------------------
-float TimeGraphLayout::GetFileIOTrackOffset(ThreadID a_TID) {
-  return m_DrawFileIO ? GetSamplingTrackOffset(a_TID) - m_SpaceBetweenTracks -
-                            m_EventTrackHeight
-                      : 0.f;
-}
-
-//-----------------------------------------------------------------------------
-bool TimeGraphLayout::IsThreadVisible(ThreadID a_TID) {
-  return std::find(m_SortedThreadIds.begin(), m_SortedThreadIds.end(), a_TID) !=
-         m_SortedThreadIds.end();
-}
-
-//-----------------------------------------------------------------------------
 float TimeGraphLayout::GetTotalHeight() {
   if (m_SortedThreadIds.size() > 0) {
     ThreadID threadId = m_SortedThreadIds.back();
@@ -162,13 +105,7 @@ float TimeGraphLayout::GetTotalHeight() {
 }
 
 //-----------------------------------------------------------------------------
-void TimeGraphLayout::SetSortedThreadIds(
-    const std::vector<ThreadID>& a_SortedThreadIds) {
-  m_SortedThreadIds = a_SortedThreadIds;
-}
-
-//-----------------------------------------------------------------------------
-void TimeGraphLayout::Reset() { m_DrawFileIO = false; }
+void TimeGraphLayout::Reset() {}
 
 //-----------------------------------------------------------------------------
 #define FLOAT_SLIDER_MIN_MAX(x, min, max)     \

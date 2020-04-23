@@ -92,6 +92,11 @@ void Track::Draw(GlCanvas* a_Canvas, bool a_Picking) {
 }
 
 //-----------------------------------------------------------------------------
+void Track::UpdatePrimitives(TimeGraph*, Batcher*, TextRenderer*, GlCanvas*,
+                             double /*min_us*/, double /*max_us*/,
+                             TickType /*min_tick*/) {}
+
+//-----------------------------------------------------------------------------
 void Track::SetPos(float a_X, float a_Y) {
   if (!m_Moving) {
     m_Pos = Vec2(a_X, a_Y);

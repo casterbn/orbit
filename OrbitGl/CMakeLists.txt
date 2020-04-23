@@ -49,7 +49,6 @@ target_sources(
          TextBox.h
          TextRenderer.h
          ThreadTrack.h
-         ThreadTrackMap.h
          TimeGraph.h
          TimeGraphLayout.h
          Track.h

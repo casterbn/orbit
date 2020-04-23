@@ -7,10 +7,14 @@
 #include <memory>
 #include <vector>
 
+#include "Batcher.h"
 #include "BlockChain.h"
 #include "CoreMath.h"
 #include "PickingManager.h"
+#include "Profiling.h"
 #include "TextBox.h"
+#include "TextRenderer.h"
+#include "TimeGraphLayout.h"
 
 class GlCanvas;
 class TimeGraph;
@@ -20,18 +24,32 @@ typedef BlockChain<TextBox, 4 * 1024> TimerChain;
 //-----------------------------------------------------------------------------
 class Track : public Pickable {
  public:
+
+  enum Type {
+    kThreadTrack,
+    kGraphTrack,
+    kGpuTrack,
+    kSchedTrack,
+    kUnknown,
+  };
+
   Track();
   ~Track() override = default;
 
   // Pickable
   void Draw(GlCanvas* a_Canvas, bool a_Picking) override;
+  virtual void UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
+                                TextRenderer* text_renderer, GlCanvas* canvas,
+                                double min_us, double max_us,
+                                TickType min_tick);
   void OnPick(int a_X, int a_Y) override;
   void OnRelease() override;
   void OnDrag(int a_X, int a_Y) override;
   bool Draggable() override { return true; }
   bool Movable() override { return true; }
 
-  virtual void AddTimer(const Timer& timer) {}
+  virtual Type GetType() const = 0;
+  virtual void AddTimer(const Timer&) {}
 
   virtual float GetHeight() const { return 0.f; };
   bool GetVisible() const { return m_Visible; }
@@ -83,4 +101,5 @@ class Track : public Pickable {
   std::atomic<TickType> m_MinTime;
   std::atomic<TickType> m_MaxTime;
   bool m_PickingEnabled = false;
+  Type type_ = kUnknown;
 };

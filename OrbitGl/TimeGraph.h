@@ -17,8 +17,8 @@
 #include "TextBox.h"
 #include "TextRenderer.h"
 #include "ThreadTrack.h"
-#include "ThreadTrackMap.h"
 #include "TimeGraphLayout.h"
+#include "absl/container/flat_hash_map.h"
 
 class Systrace;
 
@@ -37,7 +37,7 @@ class TimeGraph {
   void NeedsUpdate();
   void UpdatePrimitives(bool a_Picking);
 
-  void UpdateThreadIds();
+  void SortTracks();
   void UpdateEvents();
   void SelectEvents(float a_WorldStart, float a_WorldEnd, ThreadID a_TID);
 
@@ -108,14 +108,15 @@ class TimeGraph {
   void OnUp();
   void OnDown();
 
- protected:
-  std::shared_ptr<ThreadTrack> GetThreadTrack(ThreadID a_TID);
-  ThreadTrackMap GetThreadTracksCopy() const;
-
- private:
   Color GetEventTrackColor(Timer timer);
   Color GetTimesliceColor(Timer timer);
+  StringManager* GetStringManager() { return string_manager_.get(); }
 
+ protected:
+  void AddTrack(std::unique_ptr<Track> track);
+  std::shared_ptr<ThreadTrack> GetOrCreateThreadTrack(ThreadID a_TID);
+
+ private:
   TextRenderer m_TextRendererStatic;
   TextRenderer* m_TextRenderer = nullptr;
   GlCanvas* m_Canvas = nullptr;
@@ -151,7 +152,6 @@ class TimeGraph {
   bool m_NeedsUpdatePrimitives = false;
   bool m_DrawText = true;
   bool m_NeedsRedraw = false;
-  std::vector<TextBox*> m_VisibleTextBoxes;
   Batcher m_Batcher;
   PickingManager* m_PickingManager = nullptr;
   Timer m_LastThreadReorder;
@@ -159,8 +159,11 @@ class TimeGraph {
   std::shared_ptr<Systrace> m_Systrace;
 
   mutable Mutex m_Mutex;
-  ThreadTrackMap tracks_;
+  absl::flat_hash_map<Track::Type, std::vector<std::shared_ptr<Track>>>
+      tracks_by_type_;
+  std::vector<std::shared_ptr<Track>> tracks_;
   std::unordered_map<ThreadID, std::shared_ptr<ThreadTrack> > thread_tracks_;
+  std::vector<std::shared_ptr<Track>> sorted_tracks_;
   std::string m_ThreadFilter;
 
   std::shared_ptr<StringManager> string_manager_;

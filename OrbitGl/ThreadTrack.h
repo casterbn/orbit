@@ -26,6 +26,11 @@ class ThreadTrack : public Track {
   void OnTimer(const Timer& a_Timer);
 
   // Track
+  void UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
+                        TextRenderer* text_renderer, GlCanvas* canvas,
+                        double min_us, double max_us,
+                        TickType min_tick) override;
+  Type GetType() const override { return kThreadTrack; }
   float GetHeight() const override;
 
   std::vector<std::shared_ptr<TimerChain>> GetTimers() override;
@@ -45,7 +50,7 @@ class ThreadTrack : public Track {
   const TextBox* GetUp(TextBox* a_TextBox) const;
   const TextBox* GetDown(TextBox* a_TextBox) const;
 
-  std::vector<std::shared_ptr<TimerChain>> GetAllChains() const ;
+  std::vector<std::shared_ptr<TimerChain>> GetAllChains() override ;
 
   void SetEventTrackColor(Color color);
 
