@@ -78,7 +78,7 @@ std::string RuleEditorWindow::GetCurrentWord(const std::string a_Chain) {
   std::vector<std::string> tokens = Tokenize(a_Chain, ".->");
   if (tokens.size() > 0) {
     std::string lastWord = tokens[tokens.size() - 1];
-    if (EndsWith(a_Chain, lastWord.c_str())) {
+    if (absl::EndsWith(a_Chain, lastWord.c_str())) {
       return lastWord;
     }
   }
@@ -100,7 +100,7 @@ void RuleEditorWindow::RefreshAutoComplete(const std::string& a_Line) {
         Variable& var = pair.second;
         const std::string& varName = var.m_Name;
 
-        if (Contains(varName, currentWord)) {
+        if (absl::StrContains(varName, currentWord)) {
           m_AutoComplete.push_back(varName);
           m_MaxTextWidth =
               std::max(m_MaxTextWidth, ImGui::CalcTextSize(varName.c_str()).x);
@@ -254,7 +254,7 @@ void DrawWindow(State& state, ImVec2& popupPos, ImVec2& popupSize,
         // This means that enter was pressed whilst a
         // the popup was open and we had an 'active' item.
         // So we copy the entry to the input buffer here
-        const char* entry = nullptr;  // ENTRIES[state.activeIdx];
+        const char* entry = "";  // ENTRIES[state.activeIdx];
         const size_t length = strlen(entry);
 
         memmove(inputBuf, entry, length + 1);
@@ -598,7 +598,7 @@ void RuleEditor::OnReceiveMessage(const Message& a_Message) {
 }
 
 //-----------------------------------------------------------------------------
-void RuleEditor::ProcessVariable(const std::shared_ptr<Variable> a_Variable,
+void RuleEditor::ProcessVariable(const std::shared_ptr<Variable>& a_Variable,
                                  char* a_Data) {
   if (a_Variable->m_Size == 4) {
     GCardContainer.Update(a_Variable->m_Name, *((float*)a_Data));

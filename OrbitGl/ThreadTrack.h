@@ -33,6 +33,9 @@ class ThreadTrack : public Track {
 
   Color GetColor() const;
   static Color GetColor(ThreadID a_TID);
+  uint32_t GetNumTimers() const { return m_NumTimers; }
+  TickType GetMinTime() const { return m_MinTime; }
+  TickType GetMaxTime() const { return m_MaxTime; }
 
   const TextBox* GetFirstAfterTime(TickType a_Tick, uint32_t a_Depth) const;
   const TextBox* GetFirstBeforeTime(TickType a_Tick, uint32_t a_Depth) const;
@@ -43,6 +46,8 @@ class ThreadTrack : public Track {
   const TextBox* GetDown(TextBox* a_TextBox) const;
 
   std::vector<std::shared_ptr<TimerChain>> GetAllChains() const ;
+
+  void SetEventTrackColor(Color color);
 
  protected:
   inline void UpdateDepth(uint32_t a_Depth) {

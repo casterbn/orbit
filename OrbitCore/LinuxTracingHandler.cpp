@@ -27,10 +27,11 @@ void LinuxTracingHandler::Start() {
 
   std::vector<LinuxTracing::Function> selected_functions;
   selected_functions.reserve(selected_function_map_->size());
-  for (const auto& function : *selected_function_map_) {
-    selected_functions.emplace_back(
-        function.second->GetPdb()->GetLoadedModuleName(),
-        function.second->Offset(), function.second->GetVirtualAddress());
+  for (const auto& pair : *selected_function_map_) {
+    const auto& function = pair.second;
+    selected_functions.emplace_back(function->GetLoadedModuleName(),
+                                    function->Offset(),
+                                    function->GetVirtualAddress());
   }
 
   tracer_ = std::make_unique<LinuxTracing::Tracer>(pid, sampling_frequency,
@@ -113,21 +114,19 @@ void LinuxTracingHandler::OnCallstack(
     uint64_t address = frame.GetPc();
 
     if (!frame.GetFunctionName().empty() &&
-        !target_process_->HasSymbol(address)) {
-      std::string symbol_name =
-          absl::StrFormat("%s+%#x", llvm::demangle(frame.GetFunctionName()),
-                          frame.GetFunctionOffset());
-      std::shared_ptr<LinuxSymbol> symbol = std::make_shared<LinuxSymbol>();
-      symbol->m_Module = frame.GetMapName();
-      symbol->m_Name = symbol_name;
-      symbol->m_Address = address;
+        !target_process_->HasAddressInfo(address)) {
+      LinuxAddressInfo address_info;
+      address_info.address = address;
+      address_info.module_name = frame.GetMapName();
+      address_info.function_name = llvm::demangle(frame.GetFunctionName());
+      address_info.offset_in_function = frame.GetFunctionOffset();
 
       // TODO: Move this out of here...
-      std::string message_data = SerializeObjectBinary(*symbol);
-      GTcpServer->Send(Msg_RemoteSymbol, message_data.c_str(),
+      std::string message_data = SerializeObjectBinary(address_info);
+      GTcpServer->Send(Msg_RemoteLinuxAddressInfo, message_data.c_str(),
                        message_data.size());
 
-      target_process_->AddSymbol(address, symbol);
+      target_process_->AddAddressInfo(std::move(address_info));
     }
 
     cs.m_Data.push_back(address);
@@ -146,6 +145,7 @@ void LinuxTracingHandler::OnFunctionCall(
   timer.m_End = function_call.GetEndTimestampNs();
   timer.m_Depth = static_cast<uint8_t>(function_call.GetDepth());
   timer.m_FunctionAddress = function_call.GetVirtualAddress();
+  timer.m_UserData[0] = function_call.GetIntegerReturnValue();
 
   session_->RecordTimer(std::move(timer));
 }

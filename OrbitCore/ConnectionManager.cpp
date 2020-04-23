@@ -10,8 +10,8 @@
 #include "EventBuffer.h"
 #include "Introspection.h"
 #include "KeyAndString.h"
+#include "LinuxAddressInfo.h"
 #include "LinuxCallstackEvent.h"
-#include "LinuxSymbol.h"
 #include "OrbitBase/Logging.h"
 #include "OrbitBase/Tracing.h"
 #include "OrbitFunction.h"
@@ -21,6 +21,7 @@
 #include "SamplingProfiler.h"
 #include "Serialization.h"
 #include "SymbolHelper.h"
+#include "SymbolsManager.h"
 #include "TcpClient.h"
 #include "TcpServer.h"
 #include "TestRemoteMessages.h"
@@ -82,35 +83,16 @@ void ConnectionManager::SetSelectedFunctionsOnRemote(const Message& a_Msg) {
   PRINT_FUNC;
   const char* a_Data = a_Msg.GetData();
   size_t a_Size = a_Msg.m_Size;
-  std::istringstream buffer(std::string(a_Data, a_Size));
-  cereal::JSONInputArchive inputAr(buffer);
-  std::vector<std::string> selectedFunctions;
-  inputAr(selectedFunctions);
 
-  // Unselect the all currently selected functions:
-  std::vector<Function*> prevSelectedFuncs;
-  for (auto& pair : Capture::GSelectedFunctionsMap) {
-    prevSelectedFuncs.push_back(pair.second);
-  }
-
-  Capture::GSelectedFunctionsMap.clear();
-  for (Function* function : prevSelectedFuncs) {
-    if (function) function->UnSelect();
-  }
+  DeserializeObjectBinary(a_Data, a_Size, Capture::GSelectedFunctions);
 
   // Select the received functions:
-  for (const std::string& address_str : selectedFunctions) {
-    uint64_t address = std::stoll(address_str);
-    PRINT("Select address %x\n", address);
-    Function* function =
-        Capture::GTargetProcess->GetFunctionFromAddress(address);
-    if (!function)
-      PRINT("Received invalid address %x\n", address);
-    else {
-      PRINT("Received Selected Function: %s\n", function->PrettyName().c_str());
-      // this also adds the function to the map.
-      function->Select();
-    }
+  Capture::GSelectedFunctionsMap.clear();
+  for (std::shared_ptr<Function> function : Capture::GSelectedFunctions) {
+    // this also adds the function to the map.
+    function->Select();
+    Capture::GSelectedFunctionsMap[function->GetVirtualAddress()] =
+        function.get();
   }
 }
 
@@ -205,60 +187,6 @@ void ConnectionManager::SetupServerCallbacks() {
 
         SendRemoteProcess(GTcpServer.get(), pid);
       });
-
-  GTcpServer->AddMainThreadCallback(
-      Msg_RemoteModuleDebugInfo, [=](const Message& msg) {
-        uint32_t pid =
-            static_cast<uint32_t>(msg.m_Header.m_GenericHeader.m_Address);
-
-        std::shared_ptr<Process> process = process_list_.GetProcess(pid);
-        if (!process) {
-          ERROR("Process not found (pid=%d)", pid);
-          return;
-        }
-
-        Capture::SetTargetProcess(process);
-
-        std::vector<ModuleDebugInfo> module_infos;
-        std::istringstream buffer(std::string(msg.m_Data, msg.m_Size));
-        cereal::BinaryInputArchive inputAr(buffer);
-        inputAr(module_infos);
-
-        std::vector<ModuleDebugInfo> module_infos_send_back;
-
-        for (auto& module_info : module_infos) {
-          std::shared_ptr<Module> module =
-              process->GetModuleFromName(module_info.m_Name);
-          if (!module) {
-            ERROR("Unable to find module %s", module_info.m_Name.c_str());
-            continue;
-          }
-          const SymbolHelper symbolHelper;
-          if (!module_info.m_Functions.empty()) {
-            LOG("Received %lu function symbols from local machine for "
-                "module %s",
-                module_info.m_Functions.size(), module_info.m_Name.c_str());
-            symbolHelper.LoadSymbolsFromDebugInfo(module, module_info);
-            continue;
-          }
-
-          if (symbolHelper.LoadSymbolsCollector(module)) {
-            symbolHelper.FillDebugInfoFromModule(module, module_info);
-            LOG("Loaded %lu function symbols for module %s",
-                module_info.m_Functions.size(), module_info.m_Name.c_str());
-          } else {
-            ERROR("Unable to load symbols of module %s",
-                  module->m_Name.c_str());
-          }
-
-          module_infos_send_back.emplace_back(module_info);
-        }
-
-        // Send data back
-        std::string message_data =
-            SerializeObjectBinary(module_infos_send_back);
-        GTcpServer->Send(Msg_RemoteModuleDebugInfo, message_data);
-      });
 }
 
 void ConnectionManager::SetupClientCallbacks() {
@@ -311,14 +239,15 @@ void ConnectionManager::SetupClientCallbacks() {
     GCoreApp->ProcessCallStack(stack);
   });
 
-  GTcpClient->AddCallback(Msg_RemoteSymbol, [=](const Message& a_Msg) {
-    LinuxSymbol symbol;
-    std::istringstream buffer(std::string(a_Msg.m_Data, a_Msg.m_Size));
-    cereal::BinaryInputArchive inputAr(buffer);
-    inputAr(symbol);
+  GTcpClient->AddCallback(
+      Msg_RemoteLinuxAddressInfo, [=](const Message& a_Msg) {
+        LinuxAddressInfo address_info;
+        std::istringstream buffer(std::string(a_Msg.m_Data, a_Msg.m_Size));
+        cereal::BinaryInputArchive inputAr(buffer);
+        inputAr(address_info);
 
-    GCoreApp->AddSymbol(symbol.m_Address, symbol.m_Module, symbol.m_Name);
-  });
+        GCoreApp->AddAddressInfo(address_info);
+      });
 
   GTcpClient->AddCallback(Msg_RemoteContextSwitches, [=](const Message& a_Msg) {
     uint32_t num_context_switches =

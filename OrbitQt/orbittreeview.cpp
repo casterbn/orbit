@@ -80,7 +80,7 @@ void OrbitTreeView::Initialize(DataViewType a_Type) {
   }
 
   if (a_Type == DataViewType::FUNCTIONS ||
-      a_Type == DataViewType::LIVEFUNCTIONS ||
+      a_Type == DataViewType::LIVE_FUNCTIONS ||
       a_Type == DataViewType::CALLSTACK || a_Type == DataViewType::MODULES ||
       a_Type == DataViewType::GLOBALS) {
     setSelectionMode(ExtendedSelection);
@@ -139,7 +139,7 @@ void OrbitTreeView::OnClicked(const QModelIndex& index) {
 void OrbitTreeView::Refresh() {
   QModelIndexList list = selectionModel()->selectedIndexes();
 
-  if (this->m_Model->GetDataView()->GetType() == DataViewType::LIVEFUNCTIONS) {
+  if (this->m_Model->GetDataView()->GetType() == DataViewType::LIVE_FUNCTIONS) {
     m_Model->layoutAboutToBeChanged();
     m_Model->layoutChanged();
     return;
@@ -161,10 +161,8 @@ void OrbitTreeView::Refresh() {
 void OrbitTreeView::resizeEvent(QResizeEvent* event) {
   if (m_AutoResize && m_Model && m_Model->GetDataView()) {
     QSize headerSize = size();
-    const std::vector<float>& columnRatios =
-        m_Model->GetDataView()->GetColumnHeadersRatios();
-    for (size_t i = 0; i < columnRatios.size(); ++i) {
-      float ratio = columnRatios[i];
+    for (size_t i = 0; i < m_Model->GetDataView()->GetColumns().size(); ++i) {
+      float ratio = m_Model->GetDataView()->GetColumns()[i].ratio;
       if (ratio > 0.f) {
         header()->resizeSection(i,
                                 static_cast<int>(headerSize.width() * ratio));

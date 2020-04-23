@@ -271,10 +271,9 @@ void CaptureWindow::Hover(int a_X, int a_Y) {
     if (!textBox->GetTimer().IsType(Timer::CORE_ACTIVITY)) {
       Function* func =
           Capture::GSelectedFunctionsMap[textBox->GetTimer().m_FunctionAddress];
-      m_ToolTip =
-          s2ws(absl::StrFormat("%s %s", func ? func->PrettyName().c_str() : "",
-                               textBox->GetText().c_str()));
-      GOrbitApp->SendToUiAsync(L"tooltip:" + m_ToolTip);
+      m_ToolTip = absl::StrFormat("%s %s", func ? func->PrettyName() : "",
+                                  textBox->GetText());
+      GOrbitApp->SendToUiAsync("tooltip:" + m_ToolTip);
       NeedsRedraw();
     }
   }
@@ -293,7 +292,7 @@ void CaptureWindow::FindCode(DWORD64 address) {
     --lineInfo.m_Line;
 
     // File mapping
-    const std::map<std::wstring, std::wstring>& fileMap =
+    const std::map<std::string, std::string>& fileMap =
         GOrbitApp->GetFileMapping();
     for (const auto& pair : fileMap) {
       ReplaceStringInPlace(lineInfo.m_File, pair.first, pair.second);
@@ -301,7 +300,7 @@ void CaptureWindow::FindCode(DWORD64 address) {
 
     if (lineInfo.m_Address != 0) {
       GOrbitApp->SendToUiAsync(
-          Format(L"code^%s^%i", lineInfo.m_File.c_str(), lineInfo.m_Line));
+          absl::StrFormat("code^%s^%i", lineInfo.m_File, lineInfo.m_Line));
     }
   }
 #else
@@ -1061,9 +1060,7 @@ void DrawTexturedSquare(GLuint a_TextureId, float a_Size, float a_X,
 
 //-----------------------------------------------------------------------------
 void CaptureWindow::RenderBar() {
-  extern GLuint GTextureInjected;
   extern GLuint GTextureTimer;
-  extern GLuint GTextureHelp;
   extern GLuint GTextureRecord;
 
   float barHeight = m_Slider.GetPixelHeight();

@@ -55,19 +55,6 @@ struct FunctionArgInfo {
 
 class Function {
  public:
-  enum MemberID {
-    NAME,
-    ADDRESS,
-    MODULE,
-    FILE,
-    LINE,
-    SELECTED,
-    INDEX,
-    SIZE,
-    CALL_CONV,
-    NUM_EXPOSED_MEMBERS
-  };
-
   enum OrbitType {
     NONE,
     ORBIT_TIMER_START,
@@ -111,12 +98,12 @@ class Function {
     calling_convention_ = calling_convention;
   }
   void SetOrbitType(OrbitType type) { type_ = type; }
-  void SetPdb(Pdb* pdb) { pdb_ = pdb; }
+  void SetPdb(Pdb* pdb);
 
   const std::string& Name() const { return name_; }
   const std::string& PrettyName() const;
   const std::string& Lower() {
-    if (pretty_name_lower_.size() == 0) {
+    if (pretty_name_lower_.empty()) {
       pretty_name_lower_ = ToLower(pretty_name_);
     }
     return pretty_name_lower_;
@@ -127,7 +114,7 @@ class Function {
   const std::string& Probe() const { return probe_; }
   int CallingConvention() const { return calling_convention_; }
   const Pdb* GetPdb() const { return pdb_; }
-  const FunctionStats* Stats() const { return stats_.get(); }
+  const FunctionStats& Stats() const { return *stats_; }
   const char* GetCallingConventionString();
   void ProcessArgumentInfo();
   bool IsMemberFunction();
@@ -156,9 +143,10 @@ class Function {
   bool IsFree() const { return type_ == FREE; }
   bool IsMemoryFunc() const { return IsFree() || IsAlloc() || IsRealloc(); }
   std::string GetModuleName() const;
+  const std::string& GetLoadedModuleName() const { return loaded_module_name_; }
   Type* GetParentType();
   void ResetStats();
-  void GetDisassembly();
+  void GetDisassembly(uint32_t pid);
   void FindFile();
 
   ORBIT_SERIALIZABLE;
@@ -167,12 +155,14 @@ class Function {
   std::string name_;
   std::string pretty_name_;
   std::string pretty_name_lower_;
+  std::string loaded_module_name_;
   std::string module_;
   std::string file_;
   std::string probe_;
   uint64_t address_ = 0;
   uint64_t size_ = 0;
   uint64_t load_bias_ = 0;
+  uint64_t module_base_address_ = 0;
   uint32_t id_ = 0;
   uint32_t parent_id_ = 0;
   uint32_t line_ = 0;

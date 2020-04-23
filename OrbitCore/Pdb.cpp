@@ -77,10 +77,10 @@ Pdb::~Pdb() {
 }
 
 //-----------------------------------------------------------------------------
-void Pdb::AddFunction(const Function& function) {
-  m_Functions.push_back(function);
-  m_Functions.back().SetPdb(this);
-  CheckOrbitFunction(m_Functions.back());
+void Pdb::AddFunction(const std::shared_ptr<Function>& function) {
+  functions_.push_back(function);
+  functions_.back()->SetPdb(this);
+  CheckOrbitFunction(*functions_.back());
 }
 
 //-----------------------------------------------------------------------------
@@ -147,7 +147,7 @@ void Pdb::PrintFunction(Function& a_Function) { a_Function.Print(); }
 
 //-----------------------------------------------------------------------------
 void Pdb::Clear() {
-  m_Functions.clear();
+  functions_.clear();
   m_Types.clear();
   m_Globals.clear();
   m_TypeMap.clear();
@@ -158,7 +158,7 @@ void Pdb::Clear() {
 //-----------------------------------------------------------------------------
 void Pdb::Reserve() {
   const int size = 8 * 1024;
-  m_Functions.reserve(size);
+  functions_.reserve(size);
   m_Types.reserve(size);
   m_Globals.reserve(size);
 }
@@ -234,15 +234,15 @@ void Pdb::Update() {
 
 //-----------------------------------------------------------------------------
 void Pdb::SendStatusToUi() {
-  std::wstring status = Format(
-      L"status:Parsing %s\nFunctions: %i\nTypes: %i\nGlobals: %i\n",
-      m_Name.c_str(), m_Functions.size(), m_Types.size(), m_Globals.size());
+  std::string status = absl::StrFormat(
+      "status:Parsing %s\nFunctions: %i\nTypes: %i\nGlobals: %i\n",
+      m_Name, functions_.size(), m_Types.size(), m_Globals.size());
 
   if (m_IsPopulatingFunctionMap) {
-    status += L"PopulatingFunctionMap\n";
+    status += "PopulatingFunctionMap\n";
   }
   if (m_IsPopulatingFunctionStringMap) {
-    status += L"PopulatingFunctionStringMap\n";
+    status += "PopulatingFunctionStringMap\n";
   }
 
   int numPoints = 10;
@@ -251,7 +251,7 @@ void Pdb::SendStatusToUi() {
                        (float)period * (float)numPoints);
   if (progress > numPoints) progress = numPoints;
   for (int i = 0; i <= progress; ++i) {
-    status += L".";
+    status += ".";
   }
 
   GTcpServer->SendToUiNow(status);
@@ -382,49 +382,51 @@ void ShowSymbolInfo(IMAGEHLP_MODULE64& ModuleInfo) {
 
   // Image name
   if (wcslen(ModuleInfo.ImageName) > 0) {
-    ORBIT_LOG(Format(TEXT("Image name: %s \n"), ModuleInfo.ImageName));
+    ORBIT_LOG(absl::StrFormat("Image name: %s \n", ws2s(ModuleInfo.ImageName)));
   }
 
   // Loaded image name
   if (wcslen(ModuleInfo.LoadedImageName) > 0) {
-    ORBIT_LOG(
-        Format(TEXT("Loaded image name: %s \n"), ModuleInfo.LoadedImageName));
+    ORBIT_LOG(absl::StrFormat("Loaded image name: %s \n",
+                              ws2s(ModuleInfo.LoadedImageName)));
   }
 
   // Loaded PDB name
   if (wcslen(ModuleInfo.LoadedPdbName) > 0) {
-    ORBIT_LOG(Format(TEXT("PDB file name: %s \n"), ModuleInfo.LoadedPdbName));
+    ORBIT_LOG(absl::StrFormat("PDB file name: %s \n",
+                              ws2s(ModuleInfo.LoadedPdbName)));
   }
 
   // Is debug information unmatched ?
   // (It can only happen if the debug information is contained
   // in a separate file (.DBG or .PDB)
   if (ModuleInfo.PdbUnmatched || ModuleInfo.DbgUnmatched) {
-    ORBIT_LOG(Format(_T("Warning: Unmatched symbols. \n")));
+    ORBIT_LOG("Warning: Unmatched symbols. \n");
   }
 
   // Line numbers available ?
-  ORBIT_LOG(Format(_T("Line numbers: %s \n"), ModuleInfo.LineNumbers
-                                                  ? _T("Available")
-                                                  : _T("Not available")));
+  ORBIT_LOG(absl::StrFormat("Line numbers: %s \n", ModuleInfo.LineNumbers
+                                                       ? "Available"
+                                                       : "Not available"));
 
   // Global symbols available ?
-  ORBIT_LOG(Format(_T("Global symbols: %s \n"), ModuleInfo.GlobalSymbols
-                                                    ? _T("Available")
-                                                    : _T("Not available" )));
+  ORBIT_LOG(absl::StrFormat("Global symbols: %s \n", ModuleInfo.GlobalSymbols
+                                                         ? "Available"
+                                                         : "Not available"));
 
   // Type information available ?
-  ORBIT_LOG(Format(_T("Type information: %s \n"), ModuleInfo.TypeInfo
-                                                      ? _T("Available")
-                                                      : _T("Not available")));
+  ORBIT_LOG(absl::StrFormat("Type information: %s \n", ModuleInfo.TypeInfo
+                                                           ? "Available"
+                                                           : "Not available"));
 
   // Source indexing available ?
-  ORBIT_LOG(Format(_T("Source indexing: %s \n"),
-                   ModuleInfo.SourceIndexed ? _T("Yes") : _T("No")));
+  ORBIT_LOG(absl::StrFormat("Source indexing: %s \n",
+                            ModuleInfo.SourceIndexed ? "Yes" : "No"));
 
   // Public symbols available ?
-  ORBIT_LOG(Format(_T("Public symbols: %s \n"),
-                   ModuleInfo.Publics ? _T("Available") : _T("Not available")));
+  ORBIT_LOG(absl::StrFormat("Public symbols: %s \n", ModuleInfo.Publics
+                                                         ? "Available"
+                                                         : "Not available"));
 }
 
 //-----------------------------------------------------------------------------
@@ -508,8 +510,8 @@ void Pdb::PopulateFunctionMap() {
   SCOPE_TIMER_LOG(
       absl::StrFormat("Pdb::PopulateFunctionMap for %s", m_FileName.c_str()));
 
-  for (Function& Function : m_Functions) {
-    m_FunctionMap.insert(std::make_pair(Function.Address(), &Function));
+  for (auto& function : functions_) {
+    m_FunctionMap.insert(std::make_pair(function->Address(), function.get()));
   }
 
   m_IsPopulatingFunctionMap = false;
@@ -524,19 +526,19 @@ void Pdb::PopulateStringFunctionMap() {
 
   {
     SCOPE_TIMER_LOG("Reserving map");
-    m_StringFunctionMap.reserve(unsigned(1.5f * (float)m_Functions.size()));
+    m_StringFunctionMap.reserve(unsigned(1.5f * (float)functions_.size()));
   }
 
   {
     SCOPE_TIMER_LOG("Hash");
 
-    if (m_Functions.size() > 1000) {
+    if (functions_.size() > 1000) {
       oqpi_tk::parallel_for_each(
-          "StringMap", m_Functions,
-          [](Function& a_Function) { a_Function.Hash(); });
+          "StringMap", functions_,
+          [](std::shared_ptr<Function>& a_Function) { a_Function->Hash(); });
     } else {
-      for (Function& Function : m_Functions) {
-        Function.Hash();
+      for (std::shared_ptr<Function>& function : functions_) {
+        function->Hash();
       }
     }
   }
@@ -544,35 +546,12 @@ void Pdb::PopulateStringFunctionMap() {
   {
     SCOPE_TIMER_LOG("Map inserts");
 
-    for (Function& Function : m_Functions) {
-      m_StringFunctionMap[Function.Hash()] = &Function;
+    for (std::shared_ptr<Function>& function : functions_) {
+      m_StringFunctionMap[function->Hash()] = function.get();
     }
   }
 
   m_IsPopulatingFunctionStringMap = false;
-}
-
-//-----------------------------------------------------------------------------
-void Pdb::ApplyPresets() {
-  SCOPE_TIMER_LOG(absl::StrFormat("Pdb::ApplyPresets - %s", m_Name.c_str()));
-
-  if (Capture::GSessionPresets) {
-    std::string pdbName = Path::GetFileName(m_Name);
-
-    auto it = Capture::GSessionPresets->m_Modules.find(pdbName);
-    if (it != Capture::GSessionPresets->m_Modules.end()) {
-      SessionModule& a_Module = it->second;
-
-      for (uint64_t hash : a_Module.m_FunctionHashes) {
-        PRINT_VAR(hash);
-        auto fit = m_StringFunctionMap.find(hash);
-        if (fit != m_StringFunctionMap.end()) {
-          Function* function = fit->second;
-          function->Select();
-        }
-      }
-    }
-  }
 }
 
 //-----------------------------------------------------------------------------
@@ -639,7 +618,7 @@ bool Pdb::LineInfoFromAddress(uint64_t a_Address, LineInfo& o_LineInfo) {
         if (SUCCEEDED(sourceFile->get_fileName(&fileName))) {
           fileNameW = std::wstring(fileName);
           o_LineInfo.m_Address = a_Address;
-          o_LineInfo.m_File = fileName;
+          o_LineInfo.m_File = ws2s(fileName);
           o_LineInfo.m_Line = 0;
 
           SysFreeString(fileName);
@@ -680,21 +659,18 @@ void Pdb::ProcessData() {
 
   ScopeLock lock(Capture::GTargetProcess->GetDataMutex());
 
-  auto& functions = Capture::GTargetProcess->GetFunctions();
   auto& globals = Capture::GTargetProcess->GetGlobals();
 
-  functions.reserve(functions.size() + m_Functions.size());
-
-  for (Function& func : m_Functions) {
-    func.SetPdb(this);
-    functions.push_back(&func);
-    GOrbitUnreal.OnFunctionAdded(&func);
+  for (auto& func : functions_) {
+    func->SetPdb(this);
+    Capture::GTargetProcess->AddFunction(func);
+    GOrbitUnreal.OnFunctionAdded(func.get());
   }
 
   if (GParams.m_FindFileAndLineInfo) {
     SCOPE_TIMER_LOG("Find File and Line info");
-    for (Function& func : m_Functions) {
-      func.FindFile();
+    for (auto& func : functions_) {
+      func->FindFile();
     }
   }
 

@@ -25,8 +25,8 @@ target_sources(
          Hashing.h
          Injection.h
          Introspection.h
+         LinuxAddressInfo.h
          LinuxCallstackEvent.h
-         LinuxSymbol.h
          LinuxTracingSession.h
          Log.h
          LogInterface.h
@@ -58,6 +58,7 @@ target_sources(
          SerializationMacros.h
          StringManager.h
          SymbolHelper.h
+         SymbolsManager.h
          Systrace.h
          Tcp.h
          TcpClient.h
@@ -67,6 +68,8 @@ target_sources(
          TestRemoteMessages.h
          Threading.h
          TimerManager.h
+         Transaction.h
+         TransactionManager.h
          TypeInfoStructs.h
          Utils.h
          Variable.h
@@ -113,6 +116,7 @@ target_sources(
           ScopeTimer.cpp
           StringManager.cpp
           SymbolHelper.cpp
+          SymbolsManager.cpp
           Systrace.cpp
           Tcp.cpp
           Tcp.cpp
@@ -121,6 +125,7 @@ target_sources(
           TcpServer.cpp
           TestRemoteMessages.cpp
           TimerManager.cpp
+          TransactionManager.cpp
           Utils.cpp
           Variable.cpp
           VariableTracing.cpp
@@ -172,17 +177,16 @@ target_link_libraries(
          xxHash::xxHash
          concurrentqueue::concurrentqueue
          multicore::multicore
-         CURL::CURL
          oqpi::oqpi
          asio::asio
          abseil::abseil
-         llvm_object::llvm_object)
+         llvm_object::llvm_object 
+         crashpad::crashpad)
 
 if(WIN32)
   target_link_libraries(
     OrbitCore
     PRIVATE minhook::minhook DIA2Dump::DIA2Dump
-            crashpad::crashpad
             OrbitAsm)
   target_link_libraries(OrbitCore PRIVATE dbghelp.lib peparse::peparse)
   target_compile_definitions(OrbitCore PUBLIC -D_WIN32_WINNT=0x0700)

@@ -9,12 +9,15 @@
 #include <map>
 
 #include "Capture.h"
+#include "ConnectionManager.h"
 #include "Core.h"
+#include "CoreApp.h"
 #include "Log.h"
 #include "OrbitModule.h"
 #include "OrbitProcess.h"
 #include "Params.h"
 #include "Pdb.h"
+#include "PrintVar.h"
 #include "SamplingProfiler.h"
 #include "Serialization.h"
 #include "TcpServer.h"
@@ -66,7 +69,7 @@ bool Function::Hookable() {
     // Functions that loop back to first 5 bytes of instructions will explode as
     // the IP lands in the middle of the relative jump instruction...
     // Ideally, we would detect such a loop back and not allow hooking.
-    if (file_.find(".asm") != std::wstring::npos) {
+    if (file_.find(".asm") != std::string::npos) {
       return false;
     }
 
@@ -83,7 +86,7 @@ void Function::Select() {
     PRINT("Selected %s at 0x%" PRIx64 " (address_=0x%" PRIx64
           ", load_bias_= 0x%" PRIx64 ", base_address=0x%" PRIx64 ")\n",
           pretty_name_.c_str(), GetVirtualAddress(), address_, load_bias_,
-          pdb_->GetHModule());
+          module_base_address_);
     Capture::GSelectedFunctionsMap[GetVirtualAddress()] = this;
   }
 }
@@ -93,8 +96,14 @@ void Function::UnSelect() {
   Capture::GSelectedFunctionsMap.erase(GetVirtualAddress());
 }
 
+void Function::SetPdb(Pdb* pdb) {
+  pdb_ = pdb;
+  module_base_address_ = pdb_->GetHModule();
+  loaded_module_name_ = pdb_->GetLoadedModuleName();
+}
+
 uint64_t Function::GetVirtualAddress() const {
-  return address_ + (pdb_ != nullptr ? pdb_->GetHModule() : 0) - load_bias_;
+  return address_ + module_base_address_ - load_bias_;
 }
 
 uint64_t Function::Offset() const { return address_ - load_bias_; }
@@ -129,34 +138,19 @@ void Function::UpdateStats(const Timer& timer) {
   }
 }
 
-void Function::GetDisassembly() {
-  if (pdb_ && Capture::Connect()) {
-    Message msg(Msg_GetData);
-    uint64_t address = pdb_->GetHModule() + address_;
-    msg.m_Header.m_DataTransferHeader.m_Address = address;
-    msg.m_Header.m_DataTransferHeader.m_Type = DataTransferHeader::Code;
-    uint64_t size = size_;
-
-    // dll
-    if (size_ == 0) {
-      std::shared_ptr<Module> module =
-          Capture::GTargetProcess->GetModuleFromAddress(address);
-      if (module) {
-        uint64_t maxSize = module->m_AddressEnd - address;
-        size = std::min(GParams.m_NumBytesAssembly, maxSize);
-      }
-    }
-
-    msg.m_Size = size;
-    GTcpServer->Send(msg);
-  }
+void Function::GetDisassembly(uint32_t pid) {
+  GCoreApp->GetRemoteMemory(
+      pid, GetVirtualAddress(), Size(), [this](std::vector<uint8_t>& data) {
+        GCoreApp->Disassemble(pretty_name_, GetVirtualAddress(), data.data(),
+                              data.size());
+      });
 }
 
 void Function::FindFile() {
 #ifdef _WIN32
   LineInfo lineInfo;
   SymUtils::GetLineInfo(GetVirtualAddress(), lineInfo);
-  if (lineInfo.m_File != L"") file_ = ws2s(lineInfo.m_File);
+  if (lineInfo.m_File != "") file_ = lineInfo.m_File;
   file_ = ToLower(file_);
   line_ = lineInfo.m_Line;
 #endif
@@ -209,7 +203,7 @@ const char* Function::GetCallingConventionString() {
   return kCallingConventions[calling_convention_];
 }
 
-ORBIT_SERIALIZE(Function, 2) {
+ORBIT_SERIALIZE(Function, 3) {
   ORBIT_NVP_VAL(0, name_);
   ORBIT_NVP_VAL(0, pretty_name_);
   ORBIT_NVP_VAL(0, address_);
@@ -221,6 +215,8 @@ ORBIT_SERIALIZE(Function, 2) {
   ORBIT_NVP_VAL(0, calling_convention_);
   ORBIT_NVP_VAL(1, stats_);
   ORBIT_NVP_VAL(2, probe_);
+  ORBIT_NVP_VAL(3, module_base_address_);
+  ORBIT_NVP_VAL(3, loaded_module_name_);
 }
 
 FunctionParam::FunctionParam() {
@@ -279,11 +275,11 @@ void Function::Print() {
 
     DiaParser parser;
     parser.PrintFunctionType(diaSymbol->m_Symbol);
-    ORBIT_VIZ(parser.m_Log);
+    ORBIT_VIZ(ws2s(parser.m_Log));
   }
 
   LineInfo lineInfo;
-  SymUtils::GetLineInfo(address_ + (DWORD64)pdb_->GetHModule(), lineInfo);
+  SymUtils::GetLineInfo(address_ + module_base_address_, lineInfo);
   ORBIT_VIZV(lineInfo.m_File);
   ORBIT_VIZV(lineInfo.m_Line);
   ORBIT_VIZV(lineInfo.m_Address);

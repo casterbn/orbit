@@ -21,7 +21,7 @@ typedef BlockChain<TextBox, 4 * 1024> TimerChain;
 class Track : public Pickable {
  public:
   Track();
-  virtual ~Track() = default;
+  ~Track() override = default;
 
   // Pickable
   void Draw(GlCanvas* a_Canvas, bool a_Picking) override;

@@ -34,7 +34,6 @@ class OrbitApp : public CoreApp {
   void CheckLicense();
   void SetLicense(const std::wstring& a_License);
   std::string GetVersion();
-  void CheckForUpdate();
   void CheckDebugger();
 
   std::wstring GetCaptureFileName();
@@ -54,7 +53,6 @@ class OrbitApp : public CoreApp {
   void ToggleCapture();
   void OnDisconnect();
   void OnPdbLoaded();
-  void LogMsg(const std::wstring& a_Msg) override;
   void SetCallStack(std::shared_ptr<CallStack> a_CallStack);
   void LoadFileMapping();
   void LoadSystrace(const std::string& a_FileName);
@@ -66,16 +64,15 @@ class OrbitApp : public CoreApp {
   void UpdateVariable(Variable* a_Variable) override;
   void ClearWatchedVariables();
   void RefreshWatch();
-  void Disassemble(const std::string& a_FunctionName, DWORD64 a_VirtualAddress,
-                   const char* a_MachineCode, size_t a_Size) override;
+  void Disassemble(const std::string& a_FunctionName, uint64_t a_VirtualAddress,
+                   const uint8_t* a_MachineCode, size_t a_Size) override;
   void ProcessTimer(const Timer& a_Timer,
                     const std::string& a_FunctionName) override;
   void ProcessSamplingCallStack(LinuxCallstackEvent& a_CallStack) override;
   void ProcessHashedSamplingCallStack(CallstackEvent& a_CallStack) override;
   void ProcessCallStack(CallStack& a_CallStack) override;
   void ProcessContextSwitch(const ContextSwitch& a_ContextSwitch) override;
-  void AddSymbol(uint64_t a_Address, const std::string& a_Module,
-                 const std::string& a_Name) override;
+  void AddAddressInfo(LinuxAddressInfo address_info) override;
   void AddKeyAndString(uint64_t key, std::string_view str) override;
 
   int* GetScreenRes() { return m_ScreenRes; }
@@ -106,8 +103,6 @@ class OrbitApp : public CoreApp {
   void GoToCode(DWORD64 a_Address);
   void GoToCallstack();
   void GoToCapture();
-  void GetDisassembly(DWORD64 a_Address, DWORD a_NumBytesBelow,
-                      DWORD a_NumBytes);
 
   // Callbacks
   typedef std::function<void(DataViewType a_Type)> RefreshCallback;
@@ -139,8 +134,7 @@ class OrbitApp : public CoreApp {
   void Refresh(DataViewType a_Type = DataViewType::ALL) {
     FireRefreshCallbacks(a_Type);
   }
-  void AddUiMessageCallback(
-      std::function<void(const std::wstring&)> a_Callback);
+  void AddUiMessageCallback(std::function<void(const std::string&)> a_Callback);
   typedef std::function<std::wstring(const std::wstring& a_Caption,
                                      const std::wstring& a_Dir,
                                      const std::wstring& a_Filter)>
@@ -161,11 +155,11 @@ class OrbitApp : public CoreApp {
     return m_Arguments;
   }
 
-  void SendToUiAsync(const std::wstring& a_Msg) override;
-  void SendToUiNow(const std::wstring& a_Msg) override;
+  void SendToUiAsync(const std::string& message) override;
+  void SendToUiNow(const std::string& message) override;
   void NeedsRedraw();
 
-  const std::map<std::wstring, std::wstring>& GetFileMapping() {
+  const std::map<std::string, std::string>& GetFileMapping() {
     return m_FileMapping;
   }
 
@@ -192,6 +186,9 @@ class OrbitApp : public CoreApp {
   void OnRemoteProcess(const Message& a_Message);
   void OnRemoteProcessList(const Message& a_Message);
   void OnRemoteModuleDebugInfo(const Message& a_Message);
+  void OnRemoteModuleDebugInfo(const std::vector<ModuleDebugInfo>&) override;
+  void ApplySession(const Session& session) override;
+  void LoadSession(const std::shared_ptr<Session>& session);
   void LaunchRuleEditor(class Function* a_Function);
   void SetHeadless(bool a_Headless) { m_Headless = a_Headless; }
   bool GetHeadless() const { return m_Headless; }
@@ -234,9 +231,9 @@ class OrbitApp : public CoreApp {
   bool m_UnrealEnabled = false;
 
   std::vector<std::shared_ptr<class SamplingReport> > m_SamplingReports;
-  std::map<std::wstring, std::wstring> m_FileMapping;
+  std::map<std::string, std::string> m_FileMapping;
   std::vector<std::string> m_SymbolDirectories;
-  std::function<void(const std::wstring&)> m_UiCallback;
+  std::function<void(const std::string&)> m_UiCallback;
 
   // buffering data to send large messages instead of small ones:
   std::shared_ptr<std::thread> m_MessageBufferThread = nullptr;
@@ -252,7 +249,7 @@ class OrbitApp : public CoreApp {
   std::wstring m_User;
   std::wstring m_License;
 
-  std::queue<std::shared_ptr<struct Module> > m_ModulesToLoad;
+  std::vector<std::shared_ptr<struct Module> > m_ModulesToLoad;
   std::vector<std::string> m_PostInitArguments;
 
   class Debugger* m_Debugger = nullptr;
@@ -260,7 +257,7 @@ class OrbitApp : public CoreApp {
 
   std::shared_ptr<StringManager> string_manager_ = nullptr;
 
-  const SymbolHelper symbolHelper;
+  const SymbolHelper symbol_helper_;
 #ifndef _WIN32
   std::shared_ptr<class BpfTrace> m_BpfTrace;
 #endif

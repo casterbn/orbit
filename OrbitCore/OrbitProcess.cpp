@@ -268,7 +268,7 @@ Function* Process::GetFunctionFromAddress(uint64_t address, bool a_IsExact) {
 }
 
 //-----------------------------------------------------------------------------
-std::shared_ptr<Module> Process::GetModuleFromAddress(DWORD64 a_Address) {
+std::shared_ptr<Module> Process::GetModuleFromAddress(uint64_t a_Address) {
   if (m_Modules.empty()) {
     return nullptr;
   }
@@ -299,9 +299,9 @@ std::shared_ptr<Module> Process::GetModuleFromName(const std::string& a_Name) {
 }
 
 //-----------------------------------------------------------------------------
-void Process::AddSymbol(uint64_t a_Address,
-                        std::shared_ptr<LinuxSymbol> a_Symbol) {
-  m_Symbols[a_Address] = std::move(a_Symbol);
+void Process::AddAddressInfo(LinuxAddressInfo address_info) {
+  uint64_t address = address_info.address;
+  m_AddressInfos[address] = std::move(address_info);
 }
 
 #ifdef _WIN32
@@ -394,7 +394,7 @@ void Process::FindPdbs(const std::vector<std::string>& a_SearchLocations) {
 
         std::string signature = GuidToString(module->m_Pdb->GetGuid());
 
-        if (Contains(module->m_DebugSignature, signature)) {
+        if (absl::StrContains(module->m_DebugSignature, signature)) {
           // Found matching pdb
           module->m_PdbSize = Path::FileSize(module->m_PdbName);
           break;

@@ -22,6 +22,7 @@
 #include "../OrbitGl/SamplingReport.h"
 #include "../OrbitPlugin/OrbitSDK.h"
 #include "../external/concurrentqueue/concurrentqueue.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
 #include "licensedialog.h"
 #include "orbitdiffdialog.h"
@@ -69,7 +70,7 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App, QWidget* parent)
       [this](std::shared_ptr<SamplingReport> a_Report) {
         this->OnNewSelection(std::move(a_Report));
       });
-  GOrbitApp->AddUiMessageCallback([this](const std::wstring& a_Message) {
+  GOrbitApp->AddUiMessageCallback([this](const std::string& a_Message) {
     this->OnReceiveMessage(a_Message);
   });
   GOrbitApp->SetFindFileCallback([this](const std::wstring& a_Caption,
@@ -94,7 +95,7 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App, QWidget* parent)
 
   ui->ModulesList->Initialize(DataViewType::MODULES);
   ui->FunctionsList->Initialize(DataViewType::FUNCTIONS);
-  ui->LiveFunctionsList->Initialize(DataViewType::LIVEFUNCTIONS);
+  ui->LiveFunctionsList->Initialize(DataViewType::LIVE_FUNCTIONS);
   ui->CallStackView->Initialize(DataViewType::CALLSTACK);
   ui->TypesList->Initialize(DataViewType::TYPES);
   ui->GlobalsList->Initialize(DataViewType::GLOBALS);
@@ -173,10 +174,7 @@ void OrbitMainWindow::ParseCommandlineArguments() {
     std::string argStr = arg.toStdString();
     args.push_back(argStr);
 
-    if (Contains(argStr, "headless")) {
-      m_Headless = true;
-      this->menuBar()->hide();
-    } else if (Contains(argStr, "inject:")) {
+    if (absl::StrContains(argStr, "inject:")) {
       m_Headless = true;
     } else if (argStr == "dev") {
       m_IsDev = true;
@@ -240,7 +238,7 @@ void OrbitMainWindow::UpdatePanel(DataViewType a_Type) {
     case DataViewType::FUNCTIONS:
       ui->FunctionsList->Refresh();
       break;
-    case DataViewType::LIVEFUNCTIONS:
+    case DataViewType::LIVE_FUNCTIONS:
       ui->LiveFunctionsList->Refresh();
       break;
     case DataViewType::TYPES:
@@ -331,8 +329,8 @@ void OrbitMainWindow::OnNewSelection(
 }
 
 //-----------------------------------------------------------------------------
-void OrbitMainWindow::OnReceiveMessage(const std::wstring& a_Message) {
-  if (a_Message == L"ScreenShot") {
+void OrbitMainWindow::OnReceiveMessage(const std::string& a_Message) {
+  if (a_Message == "ScreenShot") {
     QFile file("sshot.png");
     file.open(QIODevice::WriteOnly);
     QPixmap pixMap = this->grab();
@@ -343,61 +341,52 @@ void OrbitMainWindow::OnReceiveMessage(const std::wstring& a_Message) {
 #ifdef _WIN32
     ShellExecute(0, 0, fileName.c_str(), 0, 0, SW_SHOW);
 #endif
-  } else if (StartsWith(a_Message, L"code")) {
+  } else if (absl::StartsWith(a_Message, "code")) {
     ui->FileMappingWidget->hide();
 
-    bool success = ui->CodeTextEdit->loadCode(ws2s(a_Message));
+    bool success = ui->CodeTextEdit->loadCode(a_Message);
 
     if (!success) {
       ui->FileMappingTextEdit->loadFileMap();
       ui->FileMappingWidget->show();
     }
-  } else if (StartsWith(a_Message, L"tooltip:")) {
+  } else if (absl::StartsWith(a_Message, "tooltip:")) {
     QToolTip::showText(QCursor::pos(),
-                       Replace(ws2s(a_Message), "tooltip:", "").c_str(), this);
-  } else if (StartsWith(a_Message, L"output")) {
+                       Replace(a_Message, "tooltip:", "").c_str(), this);
+  } else if (absl::StartsWith(a_Message, "output")) {
     ui->MainTabWidget->setCurrentWidget(ui->OutputTab);
-  } else if (StartsWith(a_Message, L"gotocode")) {
+  } else if (absl::StartsWith(a_Message, "gotocode")) {
     ui->RightTabWidget->setCurrentWidget(ui->CodeTab);
-  } else if (StartsWith(a_Message, L"gotocallstack")) {
+  } else if (absl::StartsWith(a_Message, "gotocallstack")) {
     ui->RightTabWidget->setCurrentWidget(ui->CallStackTab);
-  } else if (StartsWith(a_Message, L"startcapture")) {
+  } else if (absl::StartsWith(a_Message, "startcapture")) {
     SetTitle("");
-  } else if (StartsWith(a_Message, L"gotolive")) {
+  } else if (absl::StartsWith(a_Message, "gotolive")) {
     ui->RightTabWidget->setCurrentWidget(ui->LiveTab);
-  } else if (StartsWith(a_Message, L"gotocapture")) {
+  } else if (absl::StartsWith(a_Message, "gotocapture")) {
     ui->MainTabWidget->setCurrentWidget(ui->CaptureTab);
-  } else if (StartsWith(a_Message, L"pdb:")) {
+  } else if (absl::StartsWith(a_Message, "pdb:")) {
     if (GOrbitApp->IsLoading()) {
-      m_CurrentPdbName = Replace(ws2s(a_Message), "pdb:", "");
+      m_CurrentPdbName = Replace(a_Message, "pdb:", "");
       m_OutputDialog->Reset();
       m_OutputDialog->SetStatus(m_CurrentPdbName);
       m_OutputDialog->show();
       this->setDisabled(true);
     }
-  } else if (StartsWith(a_Message, L"pdbloaded")) {
+  } else if (absl::StartsWith(a_Message, "pdbloaded")) {
     this->setDisabled(false);
     m_OutputDialog->hide();
-  } else if (StartsWith(a_Message, L"status:")) {
-    m_OutputDialog->SetStatus(Replace(ws2s(a_Message), "status:", ""));
-  } else if (StartsWith(a_Message, L"log:")) {
-    m_OutputDialog->AddLog(Replace(a_Message, L"log:", L""));
-  } else if (a_Message == L"Update") {
-    std::string title = "Orbit Profiler";
-
-    title += " | Version " + GOrbitApp->GetVersion();
-    std::string msg = absl::StrFormat(
-        "A new version (%s) is available at <a "
-        "href='www.telescopp.com/update'>telescopp.com/update</a>",
-        OrbitVersion::s_LatestVersion.c_str());
-    QMessageBox::about(this, title.c_str(), msg.c_str());
-  } else if (StartsWith(a_Message, L"asm:")) {
+  } else if (absl::StartsWith(a_Message, "status:")) {
+    m_OutputDialog->SetStatus(Replace(a_Message, "status:", ""));
+  } else if (absl::StartsWith(a_Message, "log:")) {
+    m_OutputDialog->AddLog(Replace(a_Message, "log:", ""));
+  } else if (absl::StartsWith(a_Message, "asm:")) {
     OpenDisassembly(a_Message);
-  } else if (StartsWith(a_Message, L"RuleEditor")) {
+  } else if (absl::StartsWith(a_Message, "RuleEditor")) {
     m_RuleEditor->show();
-  } else if (StartsWith(a_Message, L"UpdateProcessParams")) {
+  } else if (absl::StartsWith(a_Message, "UpdateProcessParams")) {
     ui->ProcessesList->UpdateProcessParams();
-  } else if (StartsWith(a_Message, L"SetProcessParams")) {
+  } else if (absl::StartsWith(a_Message, "SetProcessParams")) {
     ui->ProcessesList->SetProcessParams();
   }
 }
@@ -600,7 +589,7 @@ void OrbitMainWindow::on_actionDiff_triggered() {
 }
 
 //-----------------------------------------------------------------------------
-void OrbitMainWindow::OpenDisassembly(const std::wstring& a_String) {
+void OrbitMainWindow::OpenDisassembly(const std::string& a_String) {
   OrbitDisassemblyDialog* dialog = new OrbitDisassemblyDialog(this);
   dialog->SetText(a_String);
   dialog->setWindowTitle("Orbit Disassembly");

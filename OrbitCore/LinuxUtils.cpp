@@ -174,7 +174,7 @@ std::unordered_map<uint32_t, float> GetCpuUtilization() {
     auto tokens = Tokenize(line, ",");
     if (tokens.size() > 8) {
       uint32_t pid = atoi(tokens[0].c_str());
-      float cpu = atof(tokens[8].c_str());
+      const auto cpu = static_cast<float>(atof(tokens[8].c_str()));
       processMap[pid] = cpu;
     }
   }
@@ -186,7 +186,7 @@ std::unordered_map<uint32_t, float> GetCpuUtilization() {
 bool Is64Bit(pid_t a_PID) {
   std::string result =
       ExecuteCommand(absl::StrFormat("file -L /proc/%u/exe", a_PID).c_str());
-  return Contains(result, "64-bit");
+  return absl::StrContains(result, "64-bit");
 }
 
 //-----------------------------------------------------------------------------

@@ -45,14 +45,6 @@ void ModuleManager::OnReceiveMessage(const Message& a_Msg) {
           break;
         }
       }
-    } else if (dataType == DataTransferHeader::Code) {
-      Function* func = Capture::GTargetProcess->GetFunctionFromAddress(
-          header.m_Address, true);
-      std::string name = func ? func->PrettyName()
-                              : absl::StrFormat("0x%" PRIx64, header.m_Address);
-
-      GCoreApp->Disassemble(name, header.m_Address, a_Msg.GetData(),
-                            a_Msg.m_Size);
     }
   }
 }
@@ -122,7 +114,8 @@ void ModuleManager::OnPdbLoaded() {
 
 #ifdef _WIN32
   // Apply presets on last pdb
-  lastPdb->ApplyPresets();
+  if (Capture::GSessionPresets != nullptr)
+    lastPdb->ApplyPresets(*Capture::GSessionPresets);
 #endif
 
   if (m_ModulesQueue.empty()) {

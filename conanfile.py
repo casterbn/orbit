@@ -14,10 +14,12 @@ class OrbitConan(ConanFile):
     generators = ["cmake_find_package_multi", "cmake"]
     options = {"system_mesa": [True, False],
                "system_qt": [True, False], "with_gui": [True, False],
-               "debian_packaging": [True, False]}
+               "debian_packaging": [True, False],
+               "fPIC": [True, False]}
     default_options = {"system_mesa": True,
                        "system_qt": True, "with_gui": True,
-                       "debian_packaging": False}
+                       "debian_packaging": False,
+                       "fPIC": True}
     _orbit_channel = "orbitdeps/stable"
     exports_sources = "CMakeLists.txt", "Orbit*", "bin/*", "cmake/*", "external/*", "LICENSE"
 
@@ -28,6 +30,12 @@ class OrbitConan(ConanFile):
             self.version = buf.getvalue().strip()[1:]
 
         return self.version
+
+
+    def config_options(self):
+        if self.settings.os == "Windows":
+            del self.options.fPIC
+
 
     def requirements(self):
         if self.settings.os != "Windows" and self.options.with_gui and not self.options.system_qt and self.options.system_mesa:
@@ -40,7 +48,6 @@ class OrbitConan(ConanFile):
         self.requires("capstone/4.0.1@{}".format(self._orbit_channel))
         self.requires("cereal/1.3.0@{}".format(self._orbit_channel))
         self.requires("gtest/1.8.1@bincrafters/stable")
-        self.requires("libcurl/7.66.0")
         self.requires("llvm_object/9.0.1@orbitdeps/stable")
         self.requires("openssl/1.1.1d@{}".format(self._orbit_channel))
         if self.settings.os != "Windows":
@@ -48,8 +55,7 @@ class OrbitConan(ConanFile):
                 "libunwindstack/80a734f14@{}".format(self._orbit_channel))
         self.requires("zlib/1.2.11@conan/stable")
 
-        if self.settings.os == "Windows":
-            self.requires("crashpad/20191009@bincrafters/stable")
+        self.requires("crashpad/20191009@{}".format(self._orbit_channel))
 
         if self.options.with_gui:
             self.requires("freeglut/3.2.1@{}".format(self._orbit_channel))
@@ -67,6 +73,10 @@ class OrbitConan(ConanFile):
         if self.options.debian_packaging and (self.settings.get_safe("os.platform") != "GGP" or tools.detected_os() != "Linux"):
             raise ConanInvalidConfiguration(
                 "Debian packaging is only supported for GGP builds!")
+
+        if self.settings.os != "Windows" and not self.options.fPIC:
+            raise ConanInvalidConfiguration("We only support compiling with fPIC enabled!")
+
 
         if self.options.with_gui and self.settings.arch == "x86":
             raise ConanInvalidConfiguration(
@@ -103,7 +113,7 @@ class OrbitConan(ConanFile):
         dest = os.getenv("CONAN_IMPORT_PATH", "bin")
         self.copy("*.dll", src="@bindirs", dst=dest)
         self.copy("*.so*", src="@libdirs", dst=dest)
-        self.copy("crashpad_handler.exe", src="@bindirs", dst=dest, root_package="crashpad")
+        self.copy("crashpad_handler*", src="@bindirs", dst=dest, root_package="crashpad")
         if self.options.with_gui:
             for path in self.deps_cpp_info["freetype-gl"].resdirs:
                 self.copy("Vera.ttf", src=path, dst="{}/fonts/".format(dest))
@@ -147,13 +157,6 @@ chmod -v 4775 /usr/bin/OrbitService
             self.run("dpkg-deb -b --root-owner-group {}".format(basedir))
             self.run("dpkg --contents {}.deb".format(basedir))
             shutil.rmtree(basedir)
-
-            basedir = "{}/install-signed-package-{}".format(self.package_folder, self._version())
-            self.run("cmake -D DESTDIR=\"{0}\" -D SRCDIR=\"{1}/contrib/signing\" -D VERSION=\"{2}\" -P \"{1}/contrib/signing/gen.cmake\"".format(basedir, self.source_folder, self._version()))
-            self.run("chmod g-s {}/DEBIAN".format(basedir))
-            self.run("chmod g-s {}/".format(basedir))
-            self.run("dpkg-deb -b --root-owner-group {}".format(basedir))
-            self.run("dpkg --contents {}.deb".format(basedir))
 
         self.copy("*", src="bin/dri", dst="bin/dri", symlinks=True)
         self.copy("*", src="bin/fonts", dst="bin/fonts", symlinks=True)

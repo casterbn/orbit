@@ -25,6 +25,7 @@
 #include "ConnectionManager.h"
 #include "Debugger.h"
 #include "DiaManager.h"
+#include "Disassembler.h"
 #include "EventTracer.h"
 #include "FunctionsDataView.h"
 #include "GlCanvas.h"
@@ -53,6 +54,7 @@
 #include "Serialization.h"
 #include "SessionsDataView.h"
 #include "StringManager.h"
+#include "SymbolsManager.h"
 #include "Systrace.h"
 #include "Tcp.h"
 #include "TcpClient.h"
@@ -60,17 +62,13 @@
 #include "TestRemoteMessages.h"
 #include "TextRenderer.h"
 #include "TimerManager.h"
+#include "TransactionManager.h"
 #include "TypesDataView.h"
 #include "Utils.h"
 #include "Version.h"
-#include "curl/curl.h"
 
 #define GLUT_DISABLE_ATEXIT_HACK
 #include "GL/freeglut.h"
-
-#ifdef _WIN32
-#include "Disassembler.h"
-#endif
 
 #if __linux__
 #include <OrbitLinuxTracing/OrbitTracing.h>
@@ -112,7 +110,7 @@ void OrbitApp::SetCommandLineArguments(const std::vector<std::string>& a_Args) {
   m_Arguments = a_Args;
 
   for (const std::string& arg : a_Args) {
-    if (Contains(arg, "gamelet:")) {
+    if (absl::StrContains(arg, "gamelet:")) {
       std::string address = Replace(arg, "gamelet:", "");
       Capture::GCaptureHost = address;
 
@@ -123,26 +121,22 @@ void OrbitApp::SetCommandLineArguments(const std::vector<std::string>& a_Args) {
       GTcpClient->AddMainThreadCallback(
           Msg_RemoteProcessList,
           [=](const Message& a_Msg) { GOrbitApp->OnRemoteProcessList(a_Msg); });
-      GTcpClient->AddMainThreadCallback(
-          Msg_RemoteModuleDebugInfo, [=](const Message& a_Msg) {
-            GOrbitApp->OnRemoteModuleDebugInfo(a_Msg);
-          });
       ConnectionManager::Get().ConnectToRemote(address);
       m_ProcessesDataView->SetIsRemote(true);
       SetIsRemote(true);
-    } else if (Contains(arg, "headless")) {
+    } else if (absl::StrContains(arg, "headless")) {
       SetHeadless(true);
-    } else if (Contains(arg, "preset:")) {
+    } else if (absl::StrContains(arg, "preset:")) {
       std::vector<std::string> vec = Tokenize(arg, ":");
       if (vec.size() > 1) {
         Capture::GPresetToLoad = vec[1];
       }
-    } else if (Contains(arg, "inject:")) {
+    } else if (absl::StrContains(arg, "inject:")) {
       std::vector<std::string> vec = Tokenize(arg, ":");
       if (vec.size() > 1) {
         Capture::GProcessToInject = vec[1];
       }
-    } else if (Contains(arg, "systrace:")) {
+    } else if (absl::StrContains(arg, "systrace:")) {
       m_PostInitArguments.push_back(arg);
     }
   }
@@ -226,15 +220,11 @@ void OrbitApp::ProcessContextSwitch(const ContextSwitch& a_ContextSwitch) {
 }
 
 //-----------------------------------------------------------------------------
-void OrbitApp::AddSymbol(uint64_t a_Address, const std::string& a_Module,
-                         const std::string& a_Name) {
+void OrbitApp::AddAddressInfo(LinuxAddressInfo address_info) {
   // This should not be called for the service - make sure it doesn't
   CHECK(!ConnectionManager::Get().IsService());
 
-  auto symbol = std::make_shared<LinuxSymbol>();
-  symbol->m_Name = a_Name;
-  symbol->m_Module = a_Module;
-  Capture::GTargetProcess->AddSymbol(a_Address, symbol);
+  Capture::GTargetProcess->AddAddressInfo(std::move(address_info));
 }
 //-----------------------------------------------------------------------------
 void OrbitApp::AddKeyAndString(uint64_t key, std::string_view str) {
@@ -343,7 +333,6 @@ bool OrbitApp::Init() {
   GParams.Load();
   GFontSize = GParams.m_FontSize;
   GOrbitApp->LoadFileMapping();
-  OrbitVersion::CheckForUpdate();
 
   return true;
 }
@@ -358,7 +347,7 @@ void OrbitApp::PostInit() {
   }
 
   for (std::string& arg : m_PostInitArguments) {
-    if (Contains(arg, "systrace:")) {
+    if (absl::StrContains(arg, "systrace:")) {
       std::string command = Replace(arg, "systrace:", "");
       auto tokens = Tokenize(command, ",");
       if (!tokens.empty()) {
@@ -380,6 +369,8 @@ void OrbitApp::PostInit() {
   } else {
     ConnectionManager::Get().InitAsService();
   }
+
+  GOrbitApp->InitializeManagers();
 }
 
 //-----------------------------------------------------------------------------
@@ -399,25 +390,26 @@ void OrbitApp::LoadFileMapping() {
             << std::endl
             << "// \"D:\\NoAccess\\File.cpp\" \"C:\\Available\\\"" << std::endl
             << std::endl
-            << "\"D:\\NoAccess\" \"C:\\Avalaible\"" << std::endl;
+            << "\"D:\\NoAccess\" \"C:\\Available\"" << std::endl;
 
     outfile.close();
   }
 
   std::wfstream infile(fileName);
   if (!infile.fail()) {
-    std::wstring line;
-    while (std::getline(infile, line)) {
-      if (StartsWith(line, L"//")) continue;
+    std::wstring wline;
+    while (std::getline(infile, wline)) {
+      std::string line = ws2s(wline);
+      if (absl::StartsWith(line, "//")) continue;
 
-      bool containsQuotes = Contains(line, L"\"");
+      bool containsQuotes = absl::StrContains(line, "\"");
 
-      std::vector<std::wstring> tokens = Tokenize(line);
+      std::vector<std::string> tokens = Tokenize(line);
       if (tokens.size() == 2 && !containsQuotes) {
         m_FileMapping[ToLower(tokens[0])] = ToLower(tokens[1]);
       } else {
-        std::vector<std::wstring> validTokens;
-        for (const std::wstring& token : Tokenize(line, L"\"//")) {
+        std::vector<std::string> validTokens;
+        for (const std::string& token : Tokenize(line, "\"//")) {
           if (!IsBlank(token)) {
             validTokens.push_back(token);
           }
@@ -497,21 +489,14 @@ void OrbitApp::RefreshWatch() {
 
 //-----------------------------------------------------------------------------
 void OrbitApp::Disassemble(const std::string& a_FunctionName,
-                           DWORD64 a_VirtualAddress, const char* a_MachineCode,
-                           size_t a_Size) {
-#ifdef _WIN32
+                           uint64_t a_VirtualAddress,
+                           const uint8_t* a_MachineCode, size_t a_Size) {
   Disassembler disasm;
   disasm.LOGF(absl::StrFormat("asm: /* %s */\n", a_FunctionName.c_str()));
   const unsigned char* code = (const unsigned char*)a_MachineCode;
   disasm.Disassemble(code, a_Size, a_VirtualAddress,
                      Capture::GTargetProcess->GetIs64Bit());
   SendToUiAsync(disasm.GetResult());
-#else
-  UNUSED(a_FunctionName);
-  UNUSED(a_VirtualAddress);
-  UNUSED(a_MachineCode);
-  UNUSED(a_Size);
-#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -556,15 +541,12 @@ void OrbitApp::MainTick() {
   if (GTcpServer) GTcpServer->ProcessMainThreadCallbacks();
   if (GTcpClient) GTcpClient->ProcessMainThreadCallbacks();
 
+  // Tick Transaction manager only from client (OrbitApp is client only);
+  GOrbitApp->GetTransactionManager()->Tick();
+
   GMainTimer.Reset();
   Capture::Update();
-#ifdef WIN32
   GTcpServer->MainThreadTick();
-#endif
-
-  if (!Capture::GPresetToLoad.empty()) {
-    GOrbitApp->OnLoadSession(Capture::GPresetToLoad);
-  }
 
   if (!Capture::GProcessToInject.empty()) {
     std::cout << "Injecting into " << Capture::GTargetProcess->GetFullName()
@@ -578,7 +560,6 @@ void OrbitApp::MainTick() {
 #ifdef _WIN32
   GOrbitApp->m_Debugger->MainTick();
 #endif
-  GOrbitApp->CheckForUpdate();
 
   ++GOrbitApp->m_NumTicks;
 
@@ -587,14 +568,6 @@ void OrbitApp::MainTick() {
     GOrbitApp->m_CaptureWindow->ZoomAll();
     GOrbitApp->NeedsRedraw();
     DoZoom = false;
-  }
-}
-
-//-----------------------------------------------------------------------------
-void OrbitApp::CheckForUpdate() {
-  if (!m_HasPromptedForUpdate && OrbitVersion::s_NeedsUpdate) {
-    SendToUiNow(L"Update");
-    m_HasPromptedForUpdate = true;
   }
 }
 
@@ -700,35 +673,14 @@ void OrbitApp::AddSelectionReport(
 //-----------------------------------------------------------------------------
 void OrbitApp::GoToCode(DWORD64 a_Address) {
   m_CaptureWindow->FindCode(a_Address);
-  SendToUiNow(L"gotocode");
+  SendToUiNow("gotocode");
 }
 
 //-----------------------------------------------------------------------------
-void OrbitApp::GoToCallstack() { SendToUiNow(L"gotocallstack"); }
+void OrbitApp::GoToCallstack() { SendToUiNow("gotocallstack"); }
 
 //-----------------------------------------------------------------------------
-void OrbitApp::GoToCapture() { SendToUiNow(L"gotocapture"); }
-
-//-----------------------------------------------------------------------------
-void OrbitApp::GetDisassembly(DWORD64 a_Address, DWORD a_NumBytesBelow,
-                              DWORD a_NumBytes) {
-  std::shared_ptr<Module> module =
-      Capture::GTargetProcess->GetModuleFromAddress(a_Address);
-  if (module && module->m_Pdb && Capture::Connect()) {
-    Message msg(Msg_GetData);
-    ULONG64 address = (ULONG64)a_Address - a_NumBytesBelow;
-    if (address < module->m_AddressStart) address = module->m_AddressStart;
-
-    DWORD64 endAddress = address + a_NumBytes;
-    if (endAddress > module->m_AddressEnd) endAddress = module->m_AddressEnd;
-
-    msg.m_Header.m_DataTransferHeader.m_Address = address;
-    msg.m_Header.m_DataTransferHeader.m_Type = DataTransferHeader::Code;
-
-    msg.m_Size = (int)a_NumBytes;
-    GTcpServer->Send(msg);
-  }
-}
+void OrbitApp::GoToCapture() { SendToUiNow("gotocapture"); }
 
 //-----------------------------------------------------------------------------
 void OrbitApp::OnOpenPdb(const std::string& file_name) {
@@ -816,13 +768,16 @@ void OrbitApp::OnLoadSession(const std::string& file_name) {
   if (!file.fail()) {
     cereal::BinaryInputArchive archive(file);
     archive(*session);
-    if (SelectProcess(Path::GetFileName(session->m_ProcessFullPath))) {
-      session->m_FileName = file_path;
-      Capture::LoadSession(session);
-      Capture::GPresetToLoad = "";
-    }
-
+    session->m_FileName = file_path;
+    LoadSession(session);
     file.close();
+  }
+}
+
+//-----------------------------------------------------------------------------
+void OrbitApp::LoadSession(const std::shared_ptr<Session>& session) {
+  if (SelectProcess(Path::GetFileName(session->m_ProcessFullPath))) {
+    Capture::GSessionPresets = session;
   }
 }
 
@@ -863,14 +818,11 @@ void OrbitApp::OnPdbLoaded() {
   FireRefreshCallbacks();
 
   if (m_ModulesToLoad.empty()) {
-    SendToUiAsync(L"pdbloaded");
+    SendToUiAsync("pdbloaded");
   } else {
     LoadModules();
   }
 }
-
-//-----------------------------------------------------------------------------
-void OrbitApp::LogMsg(const std::wstring& a_Msg) { ORBIT_LOG(a_Msg); }
 
 //-----------------------------------------------------------------------------
 void OrbitApp::FireRefreshCallbacks(DataViewType a_Type) {
@@ -888,7 +840,7 @@ void OrbitApp::FireRefreshCallbacks(DataViewType a_Type) {
 
 //-----------------------------------------------------------------------------
 void OrbitApp::AddUiMessageCallback(
-    std::function<void(const std::wstring&)> a_Callback) {
+    std::function<void(const std::string&)> a_Callback) {
   GTcpServer->SetUiCallback(a_Callback);
   m_UiCallback = a_Callback;
 }
@@ -967,20 +919,20 @@ void OrbitApp::SetCallStack(std::shared_ptr<CallStack> a_CallStack) {
 }
 
 //-----------------------------------------------------------------------------
-void OrbitApp::SendToUiAsync(const std::wstring& a_Msg) {
-  GTcpServer->SendToUiAsync(a_Msg);
+void OrbitApp::SendToUiAsync(const std::string& message) {
+  GTcpServer->SendToUiAsync(message);
 }
 
 //-----------------------------------------------------------------------------
-void OrbitApp::SendToUiNow(const std::wstring& a_Msg) {
+void OrbitApp::SendToUiNow(const std::string& message) {
   if (m_UiCallback) {
-    m_UiCallback(a_Msg);
+    m_UiCallback(message);
   }
 }
 
 //-----------------------------------------------------------------------------
 void OrbitApp::EnqueueModuleToLoad(const std::shared_ptr<Module>& a_Module) {
-  m_ModulesToLoad.push(a_Module);
+  m_ModulesToLoad.push_back(a_Module);
 }
 
 //-----------------------------------------------------------------------------
@@ -991,54 +943,26 @@ void OrbitApp::LoadModules() {
       return;
     }
 #ifdef _WIN32
-    std::shared_ptr<Module> module = std::move(m_ModulesToLoad.front());
-    m_ModulesToLoad.pop();
-    GLoadPdbAsync(module);
+    for (std::shared_ptr<Module> module : m_ModulesToLoad) {
+      GLoadPdbAsync(module);
+    }
 #else
-    while (!m_ModulesToLoad.empty()) {
-      std::shared_ptr<Module> module = m_ModulesToLoad.front();
-      m_ModulesToLoad.pop();
-
-      if (symbolHelper.LoadSymbolsIncludedInBinary(module)) continue;
-      if (symbolHelper.LoadSymbolsUsingSymbolsFile(module)) continue;
-
+    for (std::shared_ptr<Module> module : m_ModulesToLoad) {
+      if (symbol_helper_.LoadSymbolsIncludedInBinary(module)) continue;
+      if (symbol_helper_.LoadSymbolsUsingSymbolsFile(module)) continue;
       ERROR("Could not load symbols for module %s", module->m_Name.c_str());
     }
     GOrbitApp->FireRefreshCallbacks();
 #endif
   }
+
+  m_ModulesToLoad.clear();
 }
 
 //-----------------------------------------------------------------------------
 void OrbitApp::LoadRemoteModules() {
-  std::vector<ModuleDebugInfo> module_infos;
-
-  while (!m_ModulesToLoad.empty()) {
-    std::shared_ptr<Module> module = std::move(m_ModulesToLoad.front());
-    m_ModulesToLoad.pop();
-
-    ModuleDebugInfo module_info;
-    module_info.m_Name = module->m_Name;
-
-    if (symbolHelper.LoadSymbolsUsingSymbolsFile(module)) {
-      symbolHelper.FillDebugInfoFromModule(module, module_info);
-      LOG("Loaded %lu function symbols locally for %s",
-          module_info.m_Functions.size(), module_info.m_Name.c_str());
-    } else {
-      LOG("Did not find local symbols for module %s",
-          module_info.m_Name.c_str());
-    }
-    module_infos.emplace_back(module_info);
-  }
-
-  // Send modules to the collector
-  std::string module_data = SerializeObjectBinary(module_infos);
-  Message msg(Msg_RemoteModuleDebugInfo, module_data.size() + 1,
-              module_data.data());
-  msg.m_Header.m_GenericHeader.m_Address =
-      m_ProcessesDataView->GetSelectedProcess()->GetID();
-  GTcpClient->Send(msg);
-
+  GetSymbolsManager()->LoadSymbols(m_ModulesToLoad, Capture::GTargetProcess);
+  m_ModulesToLoad.clear();
   GOrbitApp->FireRefreshCallbacks();
 }
 
@@ -1100,26 +1024,59 @@ void OrbitApp::OnRemoteProcess(const Message& a_Message) {
   remoteProcess->SetIsRemote(true);
   PRINT_VAR(remoteProcess->GetName());
   GOrbitApp->m_ProcessesDataView->SetRemoteProcess(remoteProcess);
+
+  // Trigger session loading if needed.
+  std::shared_ptr<Session> session = Capture::GSessionPresets;
+  if (session) {
+    GetSymbolsManager()->LoadSymbols(session, remoteProcess);
+    GParams.m_ProcessPath = session->m_ProcessFullPath;
+    GParams.m_Arguments = session->m_Arguments;
+    GParams.m_WorkingDirectory = session->m_WorkingDirectory;
+    GCoreApp->SendToUiNow("SetProcessParams");
+    Capture::GSessionPresets = nullptr;
+  }
+}
+
+//-----------------------------------------------------------------------------
+void OrbitApp::ApplySession(const Session& session) {
+  for (const auto& pair : session.m_Modules) {
+    const std::string& name = pair.first;
+    std::shared_ptr<Module> module =
+        Capture::GTargetProcess->GetModuleFromName(Path::GetFileName(name));
+    if (module && module->m_Pdb) module->m_Pdb->ApplyPresets(session);
+  }
+
+  FireRefreshCallbacks();
 }
 
 //-----------------------------------------------------------------------------
 void OrbitApp::OnRemoteProcessList(const Message& a_Message) {
   std::istringstream buffer(std::string(a_Message.m_Data, a_Message.m_Size));
   cereal::JSONInputArchive inputAr(buffer);
-  std::shared_ptr<ProcessList> remoteProcessList =
-      std::make_shared<ProcessList>();
-  inputAr(*remoteProcessList);
-  remoteProcessList->SetRemote(true);
-  GOrbitApp->m_ProcessesDataView->SetRemoteProcessList(remoteProcessList);
+  ProcessList remoteProcessList;
+  inputAr(remoteProcessList);
+  remoteProcessList.SetRemote(true);
+  GOrbitApp->m_ProcessesDataView->SetRemoteProcessList(
+      std::move(remoteProcessList));
+
+  // Trigger session loading if needed.
+  if (!Capture::GPresetToLoad.empty()) {
+    GOrbitApp->OnLoadSession(Capture::GPresetToLoad);
+    Capture::GPresetToLoad = "";
+  }
 }
 
 //-----------------------------------------------------------------------------
 void OrbitApp::OnRemoteModuleDebugInfo(const Message& a_Message) {
-  std::istringstream buffer(std::string(a_Message.m_Data, a_Message.m_Size));
-  cereal::BinaryInputArchive inputAr(buffer);
   std::vector<ModuleDebugInfo> remote_module_debug_infos;
-  inputAr(remote_module_debug_infos);
+  DeserializeObjectBinary(a_Message.GetData(), a_Message.GetSize(),
+                          remote_module_debug_infos);
+  OnRemoteModuleDebugInfo(remote_module_debug_infos);
+}
 
+//-----------------------------------------------------------------------------
+void OrbitApp::OnRemoteModuleDebugInfo(
+    const std::vector<ModuleDebugInfo>& remote_module_debug_infos) {
   for (const ModuleDebugInfo& module_info : remote_module_debug_infos) {
     std::shared_ptr<Module> module =
         Capture::GTargetProcess->GetModuleFromName(module_info.m_Name);
@@ -1133,7 +1090,7 @@ void OrbitApp::OnRemoteModuleDebugInfo(const Message& a_Message) {
       ERROR("Remote did not send any symbols for module %s",
             module_info.m_Name.c_str());
     } else {
-      symbolHelper.LoadSymbolsFromDebugInfo(module, module_info);
+      symbol_helper_.LoadSymbolsFromDebugInfo(module, module_info);
       LOG("Received %lu function symbols from remote collector for module %s",
           module_info.m_Functions.size(), module_info.m_Name.c_str());
     }
@@ -1145,5 +1102,5 @@ void OrbitApp::OnRemoteModuleDebugInfo(const Message& a_Message) {
 //-----------------------------------------------------------------------------
 void OrbitApp::LaunchRuleEditor(Function* a_Function) {
   m_RuleEditor->m_Window.Launch(a_Function);
-  SendToUiNow(TEXT("RuleEditor"));
+  SendToUiNow("RuleEditor");
 }

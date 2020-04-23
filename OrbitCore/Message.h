@@ -61,7 +61,7 @@ enum MessageType : int16_t {
   Msg_RemoteModuleDebugInfo,
   Msg_RemoteTimers,
   Msg_RemoteCallStack,
-  Msg_RemoteSymbol,
+  Msg_RemoteLinuxAddressInfo,
   Msg_SamplingCallstack,
   Msg_TimerCallstack,
   Msg_RemoteSelectedFunctionsMap,
@@ -69,6 +69,8 @@ enum MessageType : int16_t {
   Msg_SamplingCallstacks,
   Msg_SamplingHashedCallstacks,
   Msg_KeyAndString,
+  Msg_DebugSymbols,
+  Msg_MemoryTransfer,
 };
 
 //-----------------------------------------------------------------------------
@@ -119,6 +121,7 @@ class Message {
   const Header& GetHeader() const { return m_Header; }
   const char* GetData() const { return m_Data; }
   char* GetData() { return m_Data; }
+  uint32_t GetSize() const { return m_Size; }
   static void Dump();
 
  public:

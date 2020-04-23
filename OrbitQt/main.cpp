@@ -10,22 +10,37 @@
 #include "../OrbitGl/App.h"
 #include "CrashHandler.h"
 #include "Path.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+#include "absl/flags/usage.h"
 #include "orbitmainwindow.h"
 
+// TODO: Remove this flag once we have a dialog with user
+ABSL_FLAG(bool, upload_dumps_to_server, false,
+          "Upload dumps to collection server when crashes");
+
 int main(int argc, char* argv[]) {
+  absl::SetProgramUsageMessage("CPU Profiler");
+  absl::ParseCommandLine(argc, argv);
 #if __linux__
   QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
 #endif
 
   QApplication a(argc, argv);
 
+  const std::string dump_path = Path::GetDumpPath();
 #ifdef _WIN32
-  std::string dump_path = Path::GetDumpPath();
-  std::string handler_path = QDir(QCoreApplication::applicationDirPath())
-                                 .absoluteFilePath("crashpad_handler.exe")
-                                 .toStdString();
-  CrashHandler m_CrashHandler(dump_path, handler_path);
+  const char* handler_name = "crashpad_handler.exe";
+#else
+  const char* handler_name = "crashpad_handler";
 #endif
+  const std::string handler_path = QDir(QCoreApplication::applicationDirPath())
+                                       .absoluteFilePath(handler_name)
+                                       .toStdString();
+  const std::string crash_server_url =
+      "https://clients2.google.com/cr/staging_report";
+  const CrashHandler crash_handler(dump_path, handler_path, crash_server_url,
+                                   absl::GetFlag(FLAGS_upload_dumps_to_server));
 
   a.setStyle(QStyleFactory::create("Fusion"));
 

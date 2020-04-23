@@ -36,7 +36,7 @@ std::vector<std::string> ReadSymbolsFile() {
   if (!infile.fail()) {
     std::string line;
     while (std::getline(infile, line)) {
-      if (StartsWith(line, "//") || line == "") continue;
+      if (absl::StartsWith(line, "//") || line == "") continue;
 
       std::string dir = line;
       if (Path::DirExists(dir)) {
@@ -165,7 +165,7 @@ void SymbolHelper::LoadSymbolsFromDebugInfo(
       std::make_shared<Pdb>(module->m_AddressStart, module_info.load_bias,
                             module_info.m_PdbName, module->m_FullName);
 
-  for (const Function& function : module_info.m_Functions) {
+  for (const auto& function : module_info.m_Functions) {
     module->m_Pdb->AddFunction(function);
   }
   module->m_Pdb->ProcessData();

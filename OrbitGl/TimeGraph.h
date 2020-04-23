@@ -4,6 +4,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <utility>
 
 #include "Batcher.h"
 #include "BlockChain.h"
@@ -28,8 +29,6 @@ class TimeGraph {
   void Draw(bool a_Picking = false);
   void DrawThreadTracks(bool a_Picking = false);
   void DrawMainFrame(TextBox& a_Box);
-  void DrawEvents(bool a_Picking = false);
-  void DrawTime();
   void DrawLineBuffer(bool a_Picking);
   void DrawBoxBuffer(bool a_Picking);
   void DrawBuffered(bool a_Picking);
@@ -45,7 +44,6 @@ class TimeGraph {
   void ProcessTimer(const Timer& a_Timer);
   void UpdateThreadDepth(int a_ThreadId, int a_Depth);
   void UpdateMaxTimeStamp(TickType a_Time);
-  void AddContextSwitch();
 
   float GetThreadTotalHeight();
   float GetTextBoxHeight() const { return m_Layout.GetTextBoxHeight(); }
@@ -66,7 +64,7 @@ class TimeGraph {
                double a_InitialTime);
   double GetTime(double a_Ratio);
   double GetTimeIntervalMicro(double a_Ratio);
-  void Select(const Vec2& a_WorldStart, const Vec2 a_WorldStop);
+  void Select(const Vec2& a_WorldStart, const Vec2& a_WorldStop);
   void Select(const TextBox* a_TextBox) { SelectRight(a_TextBox); }
   void SelectLeft(const TextBox* a_TextBox);
   void SelectRight(const TextBox* a_TextBox);
@@ -91,7 +89,7 @@ class TimeGraph {
   void SetCanvas(GlCanvas* a_Canvas);
   void SetFontSize(int a_FontSize);
   void SetSystrace(std::shared_ptr<Systrace> a_Systrace) {
-    m_Systrace = a_Systrace;
+    m_Systrace = std::move(a_Systrace);
   }
   Batcher& GetBatcher() { return m_Batcher; }
   uint32_t GetNumTimers() const;
@@ -104,7 +102,6 @@ class TimeGraph {
   const MemoryTracker& GetMemoryTracker() const { return m_MemTracker; }
   const TimeGraphLayout& GetLayout() const { return m_Layout; }
   TimeGraphLayout& GetLayout() { return m_Layout; }
-  Color GetThreadColor(ThreadID a_TID) const;
 
   void OnLeft();
   void OnRight();
@@ -116,6 +113,9 @@ class TimeGraph {
   ThreadTrackMap GetThreadTracksCopy() const;
 
  private:
+  Color GetEventTrackColor(Timer timer);
+  Color GetTimesliceColor(Timer timer);
+
   TextRenderer m_TextRendererStatic;
   TextRenderer* m_TextRenderer = nullptr;
   GlCanvas* m_Canvas = nullptr;
@@ -137,11 +137,8 @@ class TimeGraph {
   double m_ZoomValue = 0;
   double m_MouseRatio = 0;
   unsigned int m_MainFrameCounter = 0;
-  unsigned char m_TrackAlpha = 255;
 
   TimeGraphLayout m_Layout;
-  std::map<ThreadID, class EventTrack*>
-      m_EventTracks;  // TODO: put in ThreadTrack
 
   std::map<DWORD /*ThreadId*/, std::map<long long, ContextSwitch> >
       m_ContextSwitchesMap;
