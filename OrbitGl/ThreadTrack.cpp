@@ -37,11 +37,10 @@ void ThreadTrack::Draw(GlCanvas* a_Canvas, bool a_Picking) {
   if (m_ID == 0) return;
 
   TimeGraphLayout& layout = m_TimeGraph->GetLayout();
-  float threadOffset = layout.GetThreadBlockStart(m_ID);
   float trackHeight = GetHeight();
   float trackWidth = a_Canvas->GetWorldWidth();
 
-  SetPos(a_Canvas->GetWorldTopLeftX(), threadOffset);
+  SetPos(a_Canvas->GetWorldTopLeftX(), m_Pos[1]);
   SetSize(trackWidth, trackHeight);
 
   Track::Draw(a_Canvas, a_Picking);
@@ -71,7 +70,6 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
                                    TextRenderer* text_renderer,
                                    GlCanvas* canvas, double min_us,
                                    double max_us, TickType min_tick) {
-
   const TimeGraphLayout& m_Layout = time_graph->GetLayout();
   const TextBox& m_SceneBox = canvas->GetSceneBox();
   float minX = m_SceneBox.GetPosX();
@@ -100,9 +98,14 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
 
         bool isCore = timer.IsType(Timer::CORE_ACTIVITY);
 
-        float threadOffset = 0.f;
-            // !isCore ? m_Layout.GetThreadOffset(timer.m_TID, timer.m_Depth)
-            //         : m_Layout.GetCoreOffset(timer.m_Processor);
+        float y_offset = 0;
+        if (!isCore) {
+          y_offset = m_Pos[1] - m_Layout.GetEventTrackHeight() -
+                     m_Layout.GetSpaceBetweenTracksAndThread() -
+                     m_Layout.GetTextBoxHeight() * (timer.m_Depth + 1);
+        } else {
+          y_offset = m_Layout.GetCoreOffset(timer.m_Processor);
+        }
 
         float boxHeight = !isCore ? m_Layout.GetTextBoxHeight()
                                   : m_Layout.GetTextCoresHeight();
@@ -111,14 +114,17 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
             float(m_WorldStartX + NormalizedStart * m_WorldWidth);
         float WorldTimerWidth = float(NormalizedLength * m_WorldWidth);
 
-        Vec2 pos(WorldTimerStartX, threadOffset);
+        Vec2 pos(WorldTimerStartX, y_offset);
         Vec2 size(WorldTimerWidth, boxHeight);
 
         textBox.SetPos(pos);
         textBox.SetSize(size);
 
         if (!isCore) {
+          time_graph->UpdateThreadDepth(timer.m_TID, timer.m_Depth + 1);
           UpdateDepth(timer.m_Depth + 1);
+        } else {
+          UpdateDepth(timer.m_Processor + 1);
         }
 
         bool isContextSwitch = timer.IsType(Timer::THREAD_ACTIVITY);
@@ -200,10 +206,12 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
                                                  time.c_str());
               textBox.SetText(text);
             } else if (timer.m_Type == Timer::GPU_ACTIVITY) {
-              std::string text = absl::StrFormat(
-                  "%s; submitter: %d  %s",
-                  time_graph->GetStringManager()->Get(timer.m_UserData[0]).value_or(""),
-                  timer.m_SubmitTID, time.c_str());
+              std::string text =
+                  absl::StrFormat("%s; submitter: %d  %s",
+                                  time_graph->GetStringManager()
+                                      ->Get(timer.m_UserData[0])
+                                      .value_or(""),
+                                  timer.m_SubmitTID, time.c_str());
               textBox.SetText(text);
             } else if (!SystraceManager::Get().IsEmpty()) {
               textBox.SetText(SystraceManager::Get().GetFunctionName(

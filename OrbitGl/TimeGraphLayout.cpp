@@ -19,7 +19,7 @@ TimeGraphLayout::TimeGraphLayout() {
   m_TrackBottomMargin = 5.f;
   m_SpaceBetweenCores = 2.f;
   m_SpaceBetweenCoresAndThread = 30.f;
-  m_SpaceBetweenTracks = 2.f;
+  m_SpaceBetweenTracks = 20.f;
   m_SpaceBetweenTracksAndThread = 5.f;
   m_SpaceBetweenThreadBlocks = 30.f;
   m_TrackLabelOffset = 6.f;
@@ -65,7 +65,7 @@ float TimeGraphLayout::GetThreadStart() {
 // }
 
 //-----------------------------------------------------------------------------
-float TimeGraphLayout::GetCoreOffset(int a_CoreId) {
+float TimeGraphLayout::GetCoreOffset(int a_CoreId) const {
   if (Capture::GHasContextSwitches) {
     float coreOffset = m_WorldY - m_CoresHeight -
                        a_CoreId * (m_CoresHeight + m_SpaceBetweenCores);

@@ -103,6 +103,12 @@ void Track::SetPos(float a_X, float a_Y) {
   }
 }
 
+void Track::SetY(float y) {
+  if (!m_Moving) {
+    m_Pos[1] = y;
+  }
+}
+
 //-----------------------------------------------------------------------------
 void Track::SetSize(float a_SizeX, float a_SizeY) {
   m_Size = Vec2(a_SizeX, a_SizeY);

@@ -819,6 +819,8 @@ void CaptureWindow::RenderUI() {
     m_StatsWindow.AddLine(VAR_TO_ANSI(m_WorldTopLeftX));
     m_StatsWindow.AddLine(VAR_TO_ANSI(m_WorldTopLeftY));
     m_StatsWindow.AddLine(VAR_TO_ANSI(m_WorldMinWidth));
+    m_StatsWindow.AddLine(VAR_TO_ANSI(m_MouseX));
+    m_StatsWindow.AddLine(VAR_TO_ANSI(m_MouseY));
 
     /*
             m_StatsWindow.AddLog( VAR_TO_CHAR(

@@ -3,7 +3,6 @@
 //-----------------------------------
 #pragma once
 #include <map>
-#include <unordered_map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -16,7 +15,7 @@ class TimeGraphLayout {
  public:
   TimeGraphLayout();
 
-  float GetCoreOffset(int a_CoreId);
+  float GetCoreOffset(int a_CoreId) const;
   float GetThreadStart();
 
   float GetThreadBlockStart(ThreadID a_TID);
@@ -31,6 +30,8 @@ class TimeGraphLayout {
   float GetTrackBottomMargin() const { return m_TrackBottomMargin; }
   float GetTrackLabelOffset() const { return m_TrackLabelOffset; }
   float GetSliderWidth() const { return m_SliderWidth; }
+  float GetSpaceBetweenTracks() const { return m_SpaceBetweenTracks; }
+  float GetSpaceBetweenCores() const { return m_SpaceBetweenCores; }
   float GetSpaceBetweenTracksAndThread() const {
     return m_SpaceBetweenTracksAndThread;
   }

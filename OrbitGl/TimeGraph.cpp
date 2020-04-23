@@ -23,6 +23,7 @@
 #include "Params.h"
 #include "PickingManager.h"
 #include "SamplingProfiler.h"
+#include "SchedulerTrack.h"
 #include "StringManager.h"
 #include "Systrace.h"
 #include "TextBox.h"
@@ -94,9 +95,7 @@ Color TimeGraph::GetTimesliceColor(Timer timer) {
 }
 
 //-----------------------------------------------------------------------------
-TimeGraph::TimeGraph() {
-  m_LastThreadReorder.Start();
-}
+TimeGraph::TimeGraph() { m_LastThreadReorder.Start(); }
 
 //-----------------------------------------------------------------------------
 void TimeGraph::SetStringManager(std::shared_ptr<StringManager> str_manager) {
@@ -134,7 +133,7 @@ void TimeGraph::Clear() {
   m_CoreUtilizationMap.clear();
 
   // Debug
-  tracks_[1] = std::make_shared<GraphTrack>(this);
+  tracks_.push_back(std::make_shared<GraphTrack>(this));
 }
 
 //-----------------------------------------------------------------------------
@@ -306,15 +305,14 @@ void TimeGraph::ProcessTimer(const Timer& a_Timer) {
     }
   }
 
-
   // Debug
   if (a_Timer.IsType(Timer::CORE_ACTIVITY)) {
     Timer timer = a_Timer;
     double* value = (double*)&timer.m_UserData[0];
-    *value = sin(20*timer.m_Start*0.000'000'001);
-    tracks_[1]->AddTimer(timer);
-  std::shared_ptr<ThreadTrack> track = GetOrCreateThreadTrack(a_Timer.m_TID);
-  track->SetEventTrackColor(GetEventTrackColor(a_Timer));
+    *value = sin(20 * timer.m_Start * 0.000'000'001);
+    tracks_[0]->AddTimer(timer);
+    std::shared_ptr<ThreadTrack> track = GetOrCreateThreadTrack(a_Timer.m_TID);
+    track->SetEventTrackColor(GetEventTrackColor(a_Timer));
   }
 
   std::shared_ptr<ThreadTrack> track = GetOrCreateThreadTrack(a_Timer.m_TID);
@@ -554,10 +552,14 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
 
   SortTracks();
 
-  for( auto& track : sorted_tracks_ )
-  {
+  float current_y = 0.f;
+
+  for (auto& track : sorted_tracks_) {
+    track->SetY(current_y);
     track->UpdatePrimitives(this, &m_Batcher, &m_TextRendererStatic, m_Canvas,
                             m_MinTimeUs, m_MaxTimeUs, m_SessionMinCounter);
+    current_y -= track->GetHeight();
+    current_y -= m_Layout.GetSpaceBetweenTracks();
   }
 
   if (!a_Picking) {
@@ -688,7 +690,11 @@ std::shared_ptr<ThreadTrack> TimeGraph::GetOrCreateThreadTrack(ThreadID a_TID) {
   ScopeLock lock(m_Mutex);
   std::shared_ptr<ThreadTrack> track = thread_tracks_[a_TID];
   if (track == nullptr) {
-    track = std::make_shared<ThreadTrack>(this, a_TID);
+    if (a_TID == 0) {
+      track = std::make_shared<SchedulerTrack>(this, a_TID);
+    } else {
+      track = std::make_shared<ThreadTrack>(this, a_TID);
+    }
     tracks_.emplace_back(track);
     thread_tracks_[a_TID] = track;
   }
@@ -766,15 +772,18 @@ void TimeGraph::SortTracks() {
     }
 
     // Thread Tracks.
-    for( auto thread_id : sortedThreadIds) {
+    for (auto thread_id : sortedThreadIds) {
       sorted_tracks_.emplace_back(GetOrCreateThreadTrack(thread_id));
     }
+
+    // Debug
+    sorted_tracks_.emplace_back(tracks_[0]);
 
     m_LastThreadReorder.Reset();
   }
 
   ScopeLock lock(m_Mutex);
-  //m_Layout.CalculateOffsets(tracks_);
+  // m_Layout.CalculateOffsets(tracks_);
 }
 
 //----------------------------------------------------------------------------
@@ -782,7 +791,8 @@ void TimeGraph::OnLeft() {
   TextBox* selection = Capture::GSelectedTextBox;
   if (selection) {
     const Timer& timer = selection->GetTimer();
-    const TextBox* left = GetOrCreateThreadTrack(timer.m_TID)->GetLeft(selection);
+    const TextBox* left =
+        GetOrCreateThreadTrack(timer.m_TID)->GetLeft(selection);
     if (left) {
       SelectLeft(left);
     }
@@ -795,7 +805,8 @@ void TimeGraph::OnRight() {
   TextBox* selection = Capture::GSelectedTextBox;
   if (selection) {
     const Timer& timer = selection->GetTimer();
-    const TextBox* right = GetOrCreateThreadTrack(timer.m_TID)->GetRight(selection);
+    const TextBox* right =
+        GetOrCreateThreadTrack(timer.m_TID)->GetRight(selection);
     if (right) {
       SelectRight(right);
     }
@@ -821,7 +832,8 @@ void TimeGraph::OnDown() {
   TextBox* selection = Capture::GSelectedTextBox;
   if (selection) {
     const Timer& timer = selection->GetTimer();
-    const TextBox* down = GetOrCreateThreadTrack(timer.m_TID)->GetDown(selection);
+    const TextBox* down =
+        GetOrCreateThreadTrack(timer.m_TID)->GetDown(selection);
     if (down) {
       Select(down);
     }

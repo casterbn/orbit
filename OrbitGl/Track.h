@@ -29,7 +29,7 @@ class Track : public Pickable {
     kThreadTrack,
     kGraphTrack,
     kGpuTrack,
-    kSchedTrack,
+    kSchedulerTrack,
     kUnknown,
   };
 
@@ -77,6 +77,7 @@ class Track : public Pickable {
   const std::string& GetName() const { return m_Name; }
   void SetTimeGraph(TimeGraph* a_TimeGraph) { m_TimeGraph = a_TimeGraph; }
   void SetPos(float a_X, float a_Y);
+  void SetY(float y);
   Vec2 GetPos() const { return m_Pos; }
   void SetSize(float a_SizeX, float a_SizeY);
   void SetID(uint32_t a_ID) { m_ID = a_ID; }

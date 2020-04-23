@@ -10,11 +10,10 @@ void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
   UNUSED(picking);
 
   TimeGraphLayout& layout = m_TimeGraph->GetLayout();
-  float threadOffset = layout.GetThreadBlockStart(m_ID);
   //float trackHeight = GetHeight();
   float trackWidth = canvas->GetWorldWidth();
 
-  SetPos(canvas->GetWorldTopLeftX(), threadOffset);
+  m_Pos[0] = canvas->GetWorldTopLeftX();
   SetSize(trackWidth, GetHeight());
 
   float x0 = m_Pos[0];

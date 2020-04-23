@@ -44,6 +44,7 @@ target_sources(
          RuleEditor.h
          SamplingReport.h
          SamplingReportDataView.h
+         SchedulerTrack.h
          SessionsDataView.h
          shader.h
          TextBox.h
@@ -89,6 +90,7 @@ target_sources(
           RuleEditor.cpp
           SamplingReport.cpp
           SamplingReportDataView.cpp
+          SchedulerTrack.cpp
           SessionsDataView.cpp
           TextBox.cpp
           TextRenderer.cpp
