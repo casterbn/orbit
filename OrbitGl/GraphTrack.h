@@ -10,7 +10,7 @@ class TimeGraph;
 
 class GraphTrack : public Track {
  public:
-  GraphTrack(TimeGraph* time_graph);
+  explicit GraphTrack(TimeGraph* time_graph);
   Type GetType() const override { return kGraphTrack; }
   void Draw(GlCanvas* canvas, bool picking) override;
   void OnDrag(int x, int y) override;

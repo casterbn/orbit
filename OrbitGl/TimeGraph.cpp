@@ -459,6 +459,11 @@ float TimeGraph::GetWorldFromUs(double a_Micros) const {
 }
 
 //-----------------------------------------------------------------------------
+double TimeGraph::GetUsFromTick(TickType time) const {
+  return MicroSecondsFromTicks(m_SessionMinCounter, time) - m_MinTimeUs;
+}
+
+//-----------------------------------------------------------------------------
 TickType TimeGraph::GetTickFromWorld(float a_WorldX) {
   double ratio =
       m_WorldWidth != 0
@@ -549,6 +554,8 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
   m_TimeWindowUs = m_MaxTimeUs - m_MinTimeUs;
   m_WorldStartX = m_Canvas->GetWorldTopLeftX();
   m_WorldWidth = m_Canvas->GetWorldWidth();
+  uint64_t min_tick = GetTickFromUs(m_MinTimeUs);
+  uint64_t max_tick = GetTickFromUs(m_MaxTimeUs);
 
   SortTracks();
 
@@ -556,8 +563,7 @@ void TimeGraph::UpdatePrimitives(bool a_Picking) {
 
   for (auto& track : sorted_tracks_) {
     track->SetY(current_y);
-    track->UpdatePrimitives(this, &m_Batcher, &m_TextRendererStatic, m_Canvas,
-                            m_MinTimeUs, m_MaxTimeUs, m_SessionMinCounter);
+    track->UpdatePrimitives(min_tick, max_tick);
     current_y -= track->GetHeight();
     current_y -= m_Layout.GetSpaceBetweenTracks();
   }
@@ -576,32 +582,6 @@ void TimeGraph::UpdateEvents() {
   TickType rawMax = GetTickFromUs(m_MaxTimeUs);
 
   ScopeLock lock(GEventTracer.GetEventBuffer().GetMutex());
-
-  Color lineColor[2];
-  Color white(255, 255, 255, 255);
-  Fill(lineColor, white);
-
-  for (auto& pair : GEventTracer.GetEventBuffer().GetCallstacks()) {
-    ThreadID threadID = pair.first;
-    std::map<long long, CallstackEvent>& callstacks = pair.second;
-
-    // Sampling Events
-    float ThreadOffset = (float)m_Layout.GetSamplingTrackOffset(threadID);
-    if (ThreadOffset != -1.f) {
-      for (auto& callstackPair : callstacks) {
-        unsigned long long time = callstackPair.first;
-
-        if (time > rawMin && time < rawMax) {
-          float x = GetWorldFromTick(time);
-          Line line;
-          line.m_Beg = Vec3(x, ThreadOffset, GlCanvas::Z_VALUE_EVENT);
-          line.m_End = Vec3(x, ThreadOffset - m_Layout.GetEventTrackHeight(),
-                            GlCanvas::Z_VALUE_EVENT);
-          m_Batcher.AddLine(line, lineColor, PickingID::EVENT);
-        }
-      }
-    }
-  }
 
   // Draw selected events
   Color selectedColor[2];
@@ -665,14 +645,14 @@ void TimeGraph::Draw(bool a_Picking) {
     UpdatePrimitives(a_Picking);
   }
 
-  DrawThreadTracks(a_Picking);
+  DrawTracks(a_Picking);
   DrawBuffered(a_Picking);
 
   m_NeedsRedraw = false;
 }
 
 //-----------------------------------------------------------------------------
-void TimeGraph::DrawThreadTracks(bool a_Picking) {
+void TimeGraph::DrawTracks(bool a_Picking) {
   m_Layout.SetNumCores(GetNumCores());
   for (auto& track : sorted_tracks_) {
     if (track->GetName().empty()) {
@@ -717,7 +697,7 @@ void TimeGraph::SortTracks() {
 
     for (auto& pair : GEventTracer.GetEventBuffer().GetCallstacks()) {
       ThreadID threadID = pair.first;
-      std::map<long long, CallstackEvent>& callstacks = pair.second;
+      std::map<uint64_t, CallstackEvent>& callstacks = pair.second;
       m_EventCount[threadID] = (uint32_t)callstacks.size();
       GetOrCreateThreadTrack(threadID);
     }
@@ -781,9 +761,6 @@ void TimeGraph::SortTracks() {
 
     m_LastThreadReorder.Reset();
   }
-
-  ScopeLock lock(m_Mutex);
-  // m_Layout.CalculateOffsets(tracks_);
 }
 
 //----------------------------------------------------------------------------

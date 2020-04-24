@@ -27,7 +27,7 @@ class TimeGraph {
   TimeGraph();
 
   void Draw(bool a_Picking = false);
-  void DrawThreadTracks(bool a_Picking = false);
+  void DrawTracks(bool a_Picking = false);
   void DrawMainFrame(TextBox& a_Box);
   void DrawLineBuffer(bool a_Picking);
   void DrawBoxBuffer(bool a_Picking);
@@ -52,6 +52,8 @@ class TimeGraph {
   float GetWorldFromUs(double a_Micros) const;
   TickType GetTickFromWorld(float a_WorldX);
   TickType GetTickFromUs(double a_MicroSeconds) const;
+  double GetUsFromTick(TickType time) const;
+  double GetTimeWindowUs() const { return m_TimeWindowUs; }
   void GetWorldMinMax(float& a_Min, float& a_Max) const;
   bool UpdateSessionMinMaxCounter();
 
@@ -84,9 +86,10 @@ class TimeGraph {
   void SetTextRenderer(TextRenderer* a_TextRenderer) {
     m_TextRenderer = a_TextRenderer;
   }
-  TextRenderer* GetTextRenderer() { return m_TextRenderer; }
+  TextRenderer* GetTextRenderer() { return &m_TextRendererStatic; }
   void SetStringManager(std::shared_ptr<StringManager> str_manager);
   void SetCanvas(GlCanvas* a_Canvas);
+  GlCanvas* GetCanvas() { return m_Canvas; }
   void SetFontSize(int a_FontSize);
   void SetSystrace(std::shared_ptr<Systrace> a_Systrace) {
     m_Systrace = std::move(a_Systrace);
@@ -94,7 +97,7 @@ class TimeGraph {
   Batcher& GetBatcher() { return m_Batcher; }
   uint32_t GetNumTimers() const;
   uint32_t GetNumCores() const;
-  std::vector<std::shared_ptr<TimerChain> > GetAllTimerChains() const;
+  std::vector<std::shared_ptr<TimerChain>> GetAllTimerChains() const;
 
   void OnDrag(float a_Ratio);
   double GetMinTimeUs() const { return m_MinTimeUs; }
@@ -141,9 +144,9 @@ class TimeGraph {
 
   TimeGraphLayout m_Layout;
 
-  std::map<DWORD /*ThreadId*/, std::map<long long, ContextSwitch> >
+  std::map<DWORD /*ThreadId*/, std::map<long long, ContextSwitch>>
       m_ContextSwitchesMap;
-  std::map<DWORD /*CoreId*/, std::map<long long, ContextSwitch> >
+  std::map<DWORD /*CoreId*/, std::map<long long, ContextSwitch>>
       m_CoreUtilizationMap;
 
   std::map<ThreadID, uint32_t> m_ThreadCountMap;
@@ -162,7 +165,7 @@ class TimeGraph {
   absl::flat_hash_map<Track::Type, std::vector<std::shared_ptr<Track>>>
       tracks_by_type_;
   std::vector<std::shared_ptr<Track>> tracks_;
-  std::unordered_map<ThreadID, std::shared_ptr<ThreadTrack> > thread_tracks_;
+  std::unordered_map<ThreadID, std::shared_ptr<ThreadTrack>> thread_tracks_;
   std::vector<std::shared_ptr<Track>> sorted_tracks_;
   std::string m_ThreadFilter;
 

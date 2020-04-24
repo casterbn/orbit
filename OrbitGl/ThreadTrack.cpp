@@ -17,7 +17,7 @@ ABSL_FLAG(bool, show_return_values, false, "Show return values on time slices");
 
 //-----------------------------------------------------------------------------
 ThreadTrack::ThreadTrack(TimeGraph* a_TimeGraph, uint32_t a_ThreadID) {
-  m_TimeGraph = a_TimeGraph;
+  time_graph_ = a_TimeGraph;
   m_ID = a_ThreadID;
   m_TextRenderer = a_TimeGraph->GetTextRenderer();
   m_ThreadID = a_ThreadID;
@@ -36,7 +36,7 @@ void ThreadTrack::Draw(GlCanvas* a_Canvas, bool a_Picking) {
   // TODO: Make a proper "SchedTrack" instead of hack.
   if (m_ID == 0) return;
 
-  TimeGraphLayout& layout = m_TimeGraph->GetLayout();
+  TimeGraphLayout& layout = time_graph_->GetLayout();
   float trackHeight = GetHeight();
   float trackWidth = a_Canvas->GetWorldWidth();
 
@@ -48,7 +48,7 @@ void ThreadTrack::Draw(GlCanvas* a_Canvas, bool a_Picking) {
   // Event track
   m_EventTrack->SetPos(m_Pos[0], m_Pos[1]);
   m_EventTrack->SetSize(a_Canvas->GetWorldWidth(),
-                        m_TimeGraph->GetLayout().GetEventTrackHeight());
+                        time_graph_->GetLayout().GetEventTrackHeight());
   m_EventTrack->Draw(a_Canvas, a_Picking);
 }
 
@@ -66,20 +66,21 @@ std::string GetExtraInfo(const Timer& a_Timer) {
 }
 
 //-----------------------------------------------------------------------------
-void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
-                                   TextRenderer* text_renderer,
-                                   GlCanvas* canvas, double min_us,
-                                   double max_us, TickType min_tick) {
-  const TimeGraphLayout& m_Layout = time_graph->GetLayout();
+void ThreadTrack::UpdatePrimitives(uint64_t min_tick, uint64_t max_tick) {
+
+  m_EventTrack->UpdatePrimitives(min_tick, max_tick);
+  Batcher* batcher = &time_graph_->GetBatcher();
+  TextRenderer* text_renderer = time_graph_->GetTextRenderer();
+  GlCanvas* canvas = time_graph_->GetCanvas();
+
+  const TimeGraphLayout& m_Layout = time_graph_->GetLayout();
   const TextBox& m_SceneBox = canvas->GetSceneBox();
   float minX = m_SceneBox.GetPosX();
 
-  double m_TimeWindowUs = max_us - min_us;
+  double m_TimeWindowUs = time_graph_->GetTimeWindowUs();
   float m_WorldStartX = canvas->GetWorldTopLeftX();
   float m_WorldWidth = canvas->GetWorldWidth();
   double invTimeWindow = 1.0 / m_TimeWindowUs;
-  TickType rawStart = time_graph->GetTickFromUs(min_us);
-  TickType rawStop = time_graph->GetTickFromUs(max_us);
 
   std::vector<std::shared_ptr<TimerChain>> depthChain = GetTimers();
   for (auto& textBoxes : depthChain) {
@@ -88,9 +89,9 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
     for (TextBox& textBox : *textBoxes) {
       const Timer& timer = textBox.GetTimer();
 
-      if (!(rawStart > timer.m_End || rawStop < timer.m_Start)) {
-        double start = MicroSecondsFromTicks(min_tick, timer.m_Start) - min_us;
-        double end = MicroSecondsFromTicks(min_tick, timer.m_End) - min_us;
+      if (!(min_tick > timer.m_End || max_tick < timer.m_Start)) {
+        double start = time_graph_->GetUsFromTick(timer.m_Start);
+        double end = time_graph_->GetUsFromTick(timer.m_End);
         double elapsed = end - start;
 
         double NormalizedStart = start * invTimeWindow;
@@ -121,7 +122,7 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
         textBox.SetSize(size);
 
         if (!isCore) {
-          time_graph->UpdateThreadDepth(timer.m_TID, timer.m_Depth + 1);
+          time_graph_->UpdateThreadDepth(timer.m_TID, timer.m_Depth + 1);
           UpdateDepth(timer.m_Depth + 1);
         } else {
           UpdateDepth(timer.m_Processor + 1);
@@ -148,7 +149,7 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
         Color grey(g, g, g, 255);
         static Color selectionColor(0, 128, 255, 255);
 
-        Color col = time_graph->GetTimesliceColor(timer);
+        Color col = time_graph_->GetTimesliceColor(timer);
 
         if (isSelected) {
           col = selectionColor;
@@ -200,7 +201,7 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
               textBox.SetText(text);
             } else if (timer.m_Type == Timer::INTROSPECTION) {
               std::string text = absl::StrFormat("%s %s",
-                                                 time_graph->GetStringManager()
+                                                 time_graph_->GetStringManager()
                                                      ->Get(timer.m_UserData[0])
                                                      .value_or(""),
                                                  time.c_str());
@@ -208,7 +209,7 @@ void ThreadTrack::UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
             } else if (timer.m_Type == Timer::GPU_ACTIVITY) {
               std::string text =
                   absl::StrFormat("%s; submitter: %d  %s",
-                                  time_graph->GetStringManager()
+                                  time_graph_->GetStringManager()
                                       ->Get(timer.m_UserData[0])
                                       .value_or(""),
                                   timer.m_SubmitTID, time.c_str());
@@ -275,7 +276,7 @@ void ThreadTrack::OnTimer(const Timer& a_Timer) {
 
 //-----------------------------------------------------------------------------
 float ThreadTrack::GetHeight() const {
-  TimeGraphLayout& layout = m_TimeGraph->GetLayout();
+  TimeGraphLayout& layout = time_graph_->GetLayout();
   return layout.GetTextBoxHeight() * GetDepth() +
          layout.GetSpaceBetweenTracksAndThread() +
          layout.GetEventTrackHeight() + layout.GetTrackBottomMargin();

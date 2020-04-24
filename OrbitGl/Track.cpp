@@ -46,7 +46,7 @@ void Track::Draw(GlCanvas* a_Canvas, bool a_Picking) {
     glColor4ub(0, 128, 255, 128);
   }
 
-  const TimeGraphLayout& layout = m_TimeGraph->GetLayout();
+  const TimeGraphLayout& layout = time_graph_->GetLayout();
   float track_z = layout.GetTrackZ();
   float text_z = layout.GetTextZ();
   float label_offset = layout.GetTrackLabelOffset();
@@ -92,9 +92,7 @@ void Track::Draw(GlCanvas* a_Canvas, bool a_Picking) {
 }
 
 //-----------------------------------------------------------------------------
-void Track::UpdatePrimitives(TimeGraph*, Batcher*, TextRenderer*, GlCanvas*,
-                             double /*min_us*/, double /*max_us*/,
-                             TickType /*min_tick*/) {}
+void Track::UpdatePrimitives(uint64_t /*t_min*/, uint64_t /*t_max*/) {}
 
 //-----------------------------------------------------------------------------
 void Track::SetPos(float a_X, float a_Y) {
@@ -131,7 +129,7 @@ void Track::OnRelease() {
 
   m_Picked = false;
   m_Moving = false;
-  m_TimeGraph->NeedsUpdate();
+  time_graph_->NeedsUpdate();
 }
 
 //-----------------------------------------------------------------------------
@@ -143,5 +141,5 @@ void Track::OnDrag(int a_X, int a_Y) {
   m_Canvas->ScreenToWorld(a_X, a_Y, x, m_Pos[1]);
   m_MousePos[1] = m_Pos;
   m_Pos[1] -= m_PickingOffset[1];
-  m_TimeGraph->NeedsUpdate();
+  time_graph_->NeedsUpdate();
 }

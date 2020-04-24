@@ -27,10 +27,7 @@ class ThreadTrack : public Track {
   void OnTimer(const Timer& a_Timer);
 
   // Track
-  void UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
-                        TextRenderer* text_renderer, GlCanvas* canvas,
-                        double min_us, double max_us,
-                        TickType min_tick) override;
+  void UpdatePrimitives(uint64_t min_tick, uint64_t max_tick) override;
   Type GetType() const override { return kThreadTrack; }
   float GetHeight() const override;
 

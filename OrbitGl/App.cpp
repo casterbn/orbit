@@ -784,7 +784,7 @@ void OrbitApp::LoadSession(const std::shared_ptr<Session>& session) {
 //-----------------------------------------------------------------------------
 void OrbitApp::OnSaveCapture(const std::string& file_name) {
   CaptureSerializer ar;
-  ar.m_TimeGraph = GCurrentTimeGraph;
+  ar.time_graph_ = GCurrentTimeGraph;
   ar.Save(s2ws(file_name));
 }
 
@@ -798,7 +798,7 @@ void OrbitApp::OnLoadCapture(const std::string& file_name) {
   }
 
   CaptureSerializer ar;
-  ar.m_TimeGraph = GCurrentTimeGraph;
+  ar.time_graph_ = GCurrentTimeGraph;
   ar.Load(s2ws(file_name));
   m_ModulesDataView->SetProcess(Capture::GTargetProcess);
   StopCapture();

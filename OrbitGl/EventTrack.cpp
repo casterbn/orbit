@@ -5,10 +5,11 @@
 #include "EventTrack.h"
 
 #include "Capture.h"
+#include "EventTracer.h"
 #include "GlCanvas.h"
 
 //-----------------------------------------------------------------------------
-EventTrack::EventTrack(TimeGraph* a_TimeGraph) : m_TimeGraph(a_TimeGraph) {
+EventTrack::EventTrack(TimeGraph* a_TimeGraph) : time_graph_(a_TimeGraph) {
   m_MousePos[0] = m_MousePos[1] = Vec2(0, 0);
   m_Picked = false;
 }
@@ -67,6 +68,33 @@ void EventTrack::Draw(GlCanvas* a_Canvas, bool a_Picking) {
 }
 
 //-----------------------------------------------------------------------------
+void EventTrack::UpdatePrimitives(uint64_t min_tick, uint64_t max_tick) {
+  Batcher* batcher = &time_graph_->GetBatcher();
+  const TimeGraphLayout& layout = time_graph_->GetLayout();
+
+  Color lineColor[2];
+  Color white(255, 255, 255, 255);
+  Fill(lineColor, white);
+
+  ScopeLock lock(GEventTracer.GetEventBuffer().GetMutex());
+  std::map<uint64_t, CallstackEvent>& callstacks =
+      GEventTracer.GetEventBuffer().GetCallstacks()[m_ThreadId];
+
+  // Sampling Events
+  for (auto& pair : callstacks) {
+    uint64_t time = pair.first;
+    if (time > min_tick && time < max_tick) {
+      float x = time_graph_->GetWorldFromTick(time);
+      Line line;
+      line.m_Beg = Vec3(x, m_Pos[1], GlCanvas::Z_VALUE_EVENT);
+      line.m_End = Vec3(x, m_Pos[1] - layout.GetEventTrackHeight(),
+                        GlCanvas::Z_VALUE_EVENT);
+      batcher->AddLine(line, lineColor, PickingID::EVENT);
+    }
+  }
+}
+
+//-----------------------------------------------------------------------------
 void EventTrack::SetPos(float a_X, float a_Y) {
   m_Pos = Vec2(a_X, a_Y);
   m_ThreadName.SetPos(Vec2(a_X, a_Y));
@@ -107,5 +135,5 @@ void EventTrack::SelectEvents() {
   Vec2& from = m_MousePos[0];
   Vec2& to = m_MousePos[1];
 
-  m_TimeGraph->SelectEvents(from[0], to[0], m_ThreadId);
+  time_graph_->SelectEvents(from[0], to[0], m_ThreadId);
 }

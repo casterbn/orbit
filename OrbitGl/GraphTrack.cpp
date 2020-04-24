@@ -9,7 +9,7 @@ GraphTrack::GraphTrack(TimeGraph* time_graph) {
 void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
   UNUSED(picking);
 
-  TimeGraphLayout& layout = m_TimeGraph->GetLayout();
+  TimeGraphLayout& layout = time_graph_->GetLayout();
   //float trackHeight = GetHeight();
   float trackWidth = canvas->GetWorldWidth();
 
@@ -53,8 +53,8 @@ void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
   Fill(colors, col);
 
   // Current time window
-  uint64_t min_ns = m_TimeGraph->GetTickFromUs(m_TimeGraph->GetMinTimeUs());
-  uint64_t max_ns = m_TimeGraph->GetTickFromUs(m_TimeGraph->GetMaxTimeUs());
+  uint64_t min_ns = time_graph_->GetTickFromUs(time_graph_->GetMinTimeUs());
+  uint64_t max_ns = time_graph_->GetTickFromUs(time_graph_->GetMaxTimeUs());
   double time_range = static_cast<float>(max_ns - min_ns);
   if (values_.size() < 2 || time_range == 0) return;
 
@@ -67,14 +67,14 @@ void GraphTrack::Draw(GlCanvas* canvas, bool picking) {
     uint64_t time = it->first;
     double normalized_value = (it->second - min_) * inv_value_range_;
     float base_y = m_Pos[1] - m_Size[1];
-    float x0 = m_TimeGraph->GetWorldFromTick(last_time);
-    float x1 = m_TimeGraph->GetWorldFromTick(time);
+    float x0 = time_graph_->GetWorldFromTick(last_time);
+    float x1 = time_graph_->GetWorldFromTick(time);
     float y0 = base_y + static_cast<float>(last_normalized_value) * m_Size[1];
     float y1 = base_y + static_cast<float>(normalized_value) * m_Size[1];
     Line line;
     line.m_Beg = Vec3(x0, y0, text_z);
     line.m_End = Vec3(x1, y1, text_z);
-    m_TimeGraph->GetBatcher().AddLine(line, colors, PickingID::LINE, nullptr);
+    time_graph_->GetBatcher().AddLine(line, colors, PickingID::LINE, nullptr);
 
     last_time = time;
     last_normalized_value = normalized_value;
@@ -98,7 +98,7 @@ void GraphTrack::AddTimer(const Timer& timer) {
 
 //-----------------------------------------------------------------------------
 float GraphTrack::GetHeight() const {
-  TimeGraphLayout& layout = m_TimeGraph->GetLayout();
+  TimeGraphLayout& layout = time_graph_->GetLayout();
   float height = layout.GetTextBoxHeight() +
          layout.GetSpaceBetweenTracksAndThread() +
          layout.GetEventTrackHeight() + layout.GetTrackBottomMargin();

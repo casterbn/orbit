@@ -27,6 +27,7 @@ class Track : public Pickable {
 
   enum Type {
     kThreadTrack,
+    kEventTrack,
     kGraphTrack,
     kGpuTrack,
     kSchedulerTrack,
@@ -38,10 +39,7 @@ class Track : public Pickable {
 
   // Pickable
   void Draw(GlCanvas* a_Canvas, bool a_Picking) override;
-  virtual void UpdatePrimitives(TimeGraph* time_graph, Batcher* batcher,
-                                TextRenderer* text_renderer, GlCanvas* canvas,
-                                double min_us, double max_us,
-                                TickType min_tick);
+  virtual void UpdatePrimitives(uint64_t min_tick, uint64_t max_tick);
   void OnPick(int a_X, int a_Y) override;
   void OnRelease() override;
   void OnDrag(int a_X, int a_Y) override;
@@ -75,7 +73,7 @@ class Track : public Pickable {
   }
 
   const std::string& GetName() const { return m_Name; }
-  void SetTimeGraph(TimeGraph* a_TimeGraph) { m_TimeGraph = a_TimeGraph; }
+  void SetTimeGraph(TimeGraph* timegraph) { time_graph_ = timegraph; }
   void SetPos(float a_X, float a_Y);
   void SetY(float y);
   Vec2 GetPos() const { return m_Pos; }
@@ -84,9 +82,11 @@ class Track : public Pickable {
   uint32_t GetID() const { return m_ID; }
   void SetColor(Color a_Color) { m_Color = a_Color; }
 
+  void AddChild(std::shared_ptr<Track> track) { children_.emplace_back(track); }
+
  protected:
   GlCanvas* m_Canvas;
-  TimeGraph* m_TimeGraph;
+  TimeGraph* time_graph_;
   Vec2 m_Pos;
   Vec2 m_Size;
   Vec2 m_MousePos[2];
@@ -103,4 +103,5 @@ class Track : public Pickable {
   std::atomic<TickType> m_MaxTime;
   bool m_PickingEnabled = false;
   Type type_ = kUnknown;
+  std::vector<std::shared_ptr<Track>> children_;
 };

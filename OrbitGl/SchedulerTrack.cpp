@@ -6,7 +6,7 @@ void SchedulerTrack::Draw(GlCanvas* a_Canvas, bool a_Picking) {
 }
 
 float SchedulerTrack::GetHeight() const {
-  TimeGraphLayout& layout = m_TimeGraph->GetLayout();
+  TimeGraphLayout& layout = time_graph_->GetLayout();
   float depth = static_cast<float>(m_Depth);
   return (layout.GetTextCoresHeight() + layout.GetSpaceBetweenCores()) * depth +
          layout.GetTrackBottomMargin();
